@@ -167,7 +167,7 @@ func (p *HLS) run(info *M3u8Info) {
 					if body, err := ioutil.ReadAll(tsRes.Body); err == nil && p.Err() == nil {
 						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
 						if p.SaveContext != nil && p.SaveContext.Err() == nil {
-							err = ioutil.WriteFile(filepath.Base(tsUrl.Path), body, 0666)
+							err = ioutil.WriteFile(filepath.Join(config.Path, filepath.Base(tsUrl.Path)), body, 0666)
 						}
 						t1 = time.Now()
 						beginLen := len(p.TsPesPktChan)

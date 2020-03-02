@@ -100,7 +100,7 @@ export default {
                 if (!evt.data) return;
                 this.Rooms = JSON.parse(evt.data);
                 this.Rooms.sort((a, b) =>
-                    a.StreamPath > b.StreamPath ? 1 : -1
+                    a.TSInfo.RoomInfo.StreamPath > b.TSInfo.RoomInfo.StreamPath ? 1 : -1
                 );
             };
         },

@@ -722,12 +722,12 @@ function normalizeComponent (
   }
 }
 
-// CONCATENATED MODULE: ./node_modules/cache-loader/dist/cjs.js?{"cacheDirectory":"node_modules/.cache/vue-loader","cacheIdentifier":"9113d742-vue-loader-template"}!./node_modules/vue-loader/lib/loaders/templateLoader.js??vue-loader-options!./node_modules/cache-loader/dist/cjs.js??ref--0-0!./node_modules/vue-loader/lib??vue-loader-options!./index.vue?vue&type=template&id=987fe6f6&shadow
+// CONCATENATED MODULE: ./node_modules/cache-loader/dist/cjs.js?{"cacheDirectory":"node_modules/.cache/vue-loader","cacheIdentifier":"9113d742-vue-loader-template"}!./node_modules/vue-loader/lib/loaders/templateLoader.js??vue-loader-options!./node_modules/cache-loader/dist/cjs.js??ref--0-0!./node_modules/vue-loader/lib??vue-loader-options!./index.vue?vue&type=template&id=67c80305&shadow
 var render = function () {var _vm=this;var _h=_vm.$createElement;var _c=_vm._self._c||_h;return _c('div',{staticClass:"layout"},[_vm._l((_vm.Rooms),function(item){return _c('Card',{key:item.TSInfo.RoomInfo.StreamPath,staticClass:"room"},[_c('p',{attrs:{"slot":"title"},slot:"title"},[_vm._v(_vm._s(item.TSInfo.RoomInfo.StreamPath))]),_c('StartTime',{attrs:{"slot":"extra","value":item.TSInfo.RoomInfo.StartTime},slot:"extra"}),_c('div',{staticClass:"hls-info"},[_c('div',[_c('Badge',{attrs:{"count":Number(item.Provider)}}),_c('StartTime',{attrs:{"value":item.TSInfo.RoomInfo.StartTime}}),_c('Tooltip',{staticStyle:{"width":"240px"},attrs:{"content":item.TSInfo.BufferLength+'/2048'}},[_c('Progress',{attrs:{"stroke-width":20,"percent":Math.ceil(item.TSInfo.BufferLength*100/2048),"text-inside":""}})],1)],1),_c('div',[_c('Poptip',{attrs:{"trigger":"hover"}},[_c('table',{staticClass:"ts-info",attrs:{"slot":"content"},slot:"content"},_vm._l((item.Audio.M3u8Info),function(tsInfo,index){return _c('tr',{key:index},_vm._l((tsInfo),function(v,k){return _c('td',{key:k},[_vm._v(_vm._s(v))])}),0)}),0),_vm._v(" 📑 "+_vm._s(item.Audio.M3U8Count)+" ")]),_vm._v("| "),_c('Poptip',{attrs:{"trigger":"hover"}},[_c('table',{staticClass:"ts-info",attrs:{"slot":"content"},slot:"content"},_vm._l((item.Video.M3u8Info),function(tsInfo,index){return _c('tr',{key:index},_vm._l((tsInfo),function(v,k){return _c('td',{key:k},[_vm._v(_vm._s(v))])}),0)}),0),_vm._v(" "+_vm._s(item.Video.M3U8Count)+" ")]),_vm._v(" 💿 "+_vm._s(item.Audio.TSCount)+"|"+_vm._s(item.Video.TSCount)+" 📜 "+_vm._s(item.TSInfo.TotalPesCount)+" 📼 "+_vm._s(item.TSInfo.RoomInfo.AudioInfo.PacketCount)+" 📺 "+_vm._s(item.TSInfo.RoomInfo.VideoInfo.PacketCount)+" ")],1)]),_c('ButtonGroup',[_c('Button',{on:{"click":function($event){return _vm.showIndexM3u8(item)}}},[_vm._v("📃Index")]),(item.Audio.LastM3u8.length)?_c('Button',{on:{"click":function($event){return _vm.showAudioM3u8(item)}}},[_vm._v("📑Audio")]):_vm._e(),_c('Button',{on:{"click":function($event){return _vm.showVideoM3u8(item)}}},[_vm._v("📑Video")]),_c('Button',{on:{"click":function($event){return _vm.saveTs(item)}}},[_vm._v("💾Save")])],1)],1)}),(_vm.Rooms.length==0)?_c('div',{staticClass:"empty"},[_c('Icon',{attrs:{"type":"md-wine","size":"50"}}),_vm._v("没有任何房间 ")],1):_vm._e()],2)}
 var staticRenderFns = []
 
 
-// CONCATENATED MODULE: ./index.vue?vue&type=template&id=987fe6f6&shadow
+// CONCATENATED MODULE: ./index.vue?vue&type=template&id=67c80305&shadow
 
 // CONCATENATED MODULE: ./node_modules/cache-loader/dist/cjs.js?{"cacheDirectory":"node_modules/.cache/vue-loader","cacheIdentifier":"9113d742-vue-loader-template"}!./node_modules/vue-loader/lib/loaders/templateLoader.js??vue-loader-options!./node_modules/cache-loader/dist/cjs.js??ref--0-0!./node_modules/vue-loader/lib??vue-loader-options!./components/StartTime.vue?vue&type=template&id=795b23b6&scoped=true&
 var StartTimevue_type_template_id_795b23b6_scoped_true_render = function () {var _vm=this;var _h=_vm.$createElement;var _c=_vm._self._c||_h;return _c('Poptip',{attrs:{"trigger":"hover","content":'⌚️'+ new Date(_vm.value).toLocaleString()}},[_c('Time',{attrs:{"time":new Date(_vm.value)}})],1)}
@@ -879,7 +879,7 @@ let listES = null;
                 if (!evt.data) return;
                 this.Rooms = JSON.parse(evt.data);
                 this.Rooms.sort((a, b) =>
-                    a.StreamPath > b.StreamPath ? 1 : -1
+                    a.TSInfo.RoomInfo.StreamPath > b.TSInfo.RoomInfo.StreamPath ? 1 : -1
                 );
             };
         },
