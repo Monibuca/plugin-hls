@@ -38,7 +38,7 @@ func init() {
 		Version: "1.0.0",
 		Config:  &config,
 		Run: func() {
-			os.MkdirAll(config.Path, 0666)
+			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite {
 				OnPublishHooks.AddHook(writeHLS)
 			}
@@ -72,7 +72,6 @@ type HLS struct {
 	HLSInfo
 	TsHead      http.Header     //用于提供cookie等特殊身份的http头
 	SaveContext context.Context //用来保存ts文件到服务器
-	parent      Publisher       //上层发布者
 }
 
 // HLSInfo 可序列化信息，供控制台查看
@@ -167,7 +166,8 @@ func (p *HLS) run(info *M3u8Info) {
 					if body, err := ioutil.ReadAll(tsRes.Body); err == nil && p.Err() == nil {
 						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
 						if p.SaveContext != nil && p.SaveContext.Err() == nil {
-							err = ioutil.WriteFile(filepath.Join(config.Path, filepath.Base(tsUrl.Path)), body, 0666)
+							os.MkdirAll(filepath.Join(config.Path, p.StreamPath), 0666)
+							err = ioutil.WriteFile(filepath.Join(config.Path, p.StreamPath, filepath.Base(tsUrl.Path)), body, 0666)
 						}
 						t1 = time.Now()
 						beginLen := len(p.TsPesPktChan)
@@ -198,15 +198,10 @@ func (p *HLS) run(info *M3u8Info) {
 	}
 }
 func (p *HLS) OnClosed() {
-	if p.parent != nil {
-		p.parent.OnClosed()
-	}
+	p.TS.OnClosed()
 	collection.Delete(p.StreamPath)
 }
 func (p *HLS) Publish(streamName string, publisher Publisher) (result bool) {
-	if publisher != p {
-		p.parent = publisher
-	}
 	if result = p.TS.Publish(streamName, publisher); result {
 		p.HLSInfo.TSInfo = &p.TS.TSInfo
 		collection.Store(streamName, p)
