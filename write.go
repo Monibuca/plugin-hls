@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	. "github.com/Monibuca/engine"
 	"github.com/Monibuca/engine/avformat"
 	"github.com/Monibuca/engine/avformat/mpegts"
-	"github.com/Monibuca/engine/util"
 )
 
 func writeHLS(r *Room) {
@@ -42,15 +41,15 @@ func writeHLS(r *Room) {
 				if int64(p.Timestamp-vwrite_time) >= hls_fragment {
 					//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 
-					tsFilename := strings.Split(r.StreamPath, "/")[1] + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
+					tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 
-					if err = writeHlsTsSegmentFile(hls_path+"/"+tsFilename, hls_segment_data.Bytes()); err != nil {
+					if err = writeHlsTsSegmentFile(filepath.Join(hls_path, tsFilename), hls_segment_data.Bytes()); err != nil {
 						return
 					}
 
 					inf := PlaylistInf{
 						Duration: float64((video.Timestamp - vwrite_time) / 1000),
-						Title:    tsFilename,
+						Title:    filepath.Base(hls_path) + "/" + tsFilename,
 					}
 
 					if hls_segment_count >= uint32(config.Window) {
@@ -128,15 +127,9 @@ func writeHLS(r *Room) {
 			Targetduration: int(hls_fragment / 666), // hlsFragment * 1.5 / 1000
 		}
 
-		hls_path = config.Path + "/" + r.StreamPath
+		hls_path = filepath.Join(config.Path, r.StreamPath)
 		hls_m3u8_name = hls_path + ".m3u8"
-
-		if !util.Exist(hls_path) {
-			if err = os.Mkdir(hls_path, os.ModePerm); err != nil {
-				return
-			}
-		}
-
+		os.MkdirAll(hls_path, os.ModePerm)
 		if err = hls_playlist.Init(hls_m3u8_name); err != nil {
 			log.Println(err)
 			return

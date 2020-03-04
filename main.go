@@ -9,9 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -30,12 +28,11 @@ var config struct {
 }
 
 func init() {
-	_, currentFilePath, _, _ := runtime.Caller(0)
 	InstallPlugin(&PluginConfig{
 		Name:    "HLS",
 		Type:    PLUGIN_PUBLISHER | PLUGIN_HOOK,
-		UI:      path.Join(path.Dir(currentFilePath), "dashboard", "ui", "plugin-hls.min.js"),
-		Version: "1.0.0",
+		UI:      CurrentDir("dashboard", "ui", "plugin-hls.min.js"),
+		Version: "1.0.1",
 		Config:  &config,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
