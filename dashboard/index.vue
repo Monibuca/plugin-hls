@@ -98,7 +98,7 @@ export default {
             listES = new EventSource("/hls/list");
             listES.onmessage = evt => {
                 if (!evt.data) return;
-                this.Rooms = JSON.parse(evt.data);
+                this.Rooms = JSON.parse(evt.data)||[];
                 this.Rooms.sort((a, b) =>
                     a.TSInfo.RoomInfo.StreamPath > b.TSInfo.RoomInfo.StreamPath ? 1 : -1
                 );
