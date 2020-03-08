@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -59,6 +60,19 @@ func init() {
 			hls := data.(*HLS)
 			hls.SaveContext = r.Context()
 			<-hls.SaveContext.Done()
+		}
+	})
+	http.HandleFunc("/hls/pull", func(w http.ResponseWriter, r *http.Request) {
+		targetURL := r.URL.Query().Get("target")
+		streamPath := r.URL.Query().Get("streamPath")
+		p := new(HLS)
+		var err error
+		p.Video.Req, err = http.NewRequest("GET", targetURL, nil)
+		if err == nil {
+			p.Publish(streamPath, p)
+			w.Write([]byte(`{"code":0}`))
+		} else {
+			w.Write([]byte(fmt.Sprintf(`{"code":1,"msg":"%s"}`, err.Error())))
 		}
 	})
 }
