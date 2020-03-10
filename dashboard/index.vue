@@ -13,17 +13,13 @@
                 <p slot="title">{{item.TSInfo.RoomInfo.StreamPath}}</p>
                 <StartTime slot="extra" :value="item.TSInfo.RoomInfo.StartTime"></StartTime>
                 <div class="hls-info">
-                    <div>
-                        <Badge :count="Number(item.Provider)" />
-                        <StartTime :value="item.TSInfo.RoomInfo.StartTime" />
-                        <Tooltip :content="item.TSInfo.BufferLength+'/2048'" style="width: 240px">
-                            <Progress
-                                :stroke-width="20"
-                                :percent="Math.ceil(item.TSInfo.BufferLength*100/2048)"
-                                text-inside
-                            />
-                        </Tooltip>
-                    </div>
+                    <Tooltip :content="item.TSInfo.BufferLength+'/2048'" style="width: 240px">
+                        <Progress
+                            :stroke-width="20"
+                            :percent="Math.ceil(item.TSInfo.BufferLength*100/2048)"
+                            text-inside
+                        />
+                    </Tooltip>
                     <div>
                         <Poptip trigger="hover">
                             <table class="ts-info" slot="content">
@@ -71,7 +67,7 @@ export default {
             currentStream: null,
             Rooms: null,
             remoteAddr: "",
-            streamPath:""
+            streamPath: ""
         };
     },
 
@@ -130,9 +126,9 @@ export default {
                 title: "拉流转发",
                 onOk() {
                     window.ajax
-                        .getJSON("/hls/pull",{
-                            target:this.remoteAddr,
-                            streamPath:this.streamPath
+                        .getJSON("/hls/pull", {
+                            target: this.remoteAddr,
+                            streamPath: this.streamPath
                         })
                         .then(x => {
                             if (x.code == 0) {
@@ -149,28 +145,32 @@ export default {
                         });
                 },
                 render: h => {
-                    return  h("div",{},[h("Input", {
-                        props: {
-                            value: this.remoteAddr,
-                            autofocus: true,
-                            placeholder: "Please enter URL of m3u8..."
-                        },
-                        on: {
-                            input: val => {
-                                this.remoteAddr = val;
+                    return h("div", {}, [
+                        h("Input", {
+                            props: {
+                                value: this.remoteAddr,
+                                autofocus: true,
+                                placeholder: "Please enter URL of m3u8..."
+                            },
+                            on: {
+                                input: val => {
+                                    this.remoteAddr = val;
+                                }
                             }
-                        }
-                    }),h("Input", {
-                        props: {
-                            value: this.streamPath,
-                            placeholder: "Please enter streamPath to publish."
-                        },
-                        on: {
-                            input: val => {
-                                this.streamPath = val;
+                        }),
+                        h("Input", {
+                            props: {
+                                value: this.streamPath,
+                                placeholder:
+                                    "Please enter streamPath to publish."
+                            },
+                            on: {
+                                input: val => {
+                                    this.streamPath = val;
+                                }
                             }
-                        }
-                    })]);
+                        })
+                    ]);
                 }
             });
         }
