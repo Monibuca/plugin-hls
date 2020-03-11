@@ -185,7 +185,6 @@ export default {
 </script>
 
 <style>
-@import url("/iview.css");
 .empty {
     color: #eb5e46;
     width: 100%;
