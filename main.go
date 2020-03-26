@@ -33,7 +33,7 @@ func init() {
 		Name:    "HLS",
 		Type:    PLUGIN_PUBLISHER | PLUGIN_HOOK,
 		UI:      CurrentDir("dashboard", "ui", "plugin-hls.min.js"),
-		Version: "1.0.5",
+		Version: "1.0.6",
 		Config:  &config,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)

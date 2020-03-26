@@ -14,11 +14,8 @@
                 <StartTime slot="extra" :value="item.TSInfo.RoomInfo.StartTime"></StartTime>
                 <div class="hls-info">
                     <Tooltip :content="item.TSInfo.BufferLength+'/2048'" style="width: 240px">
-                        <Progress
-                            :stroke-width="20"
-                            :percent="Math.ceil(item.TSInfo.BufferLength*100/2048)"
-                            text-inside
-                        />
+                        <Progress :stroke-width="20" :percent="Math.ceil(item.TSInfo.BufferLength*100/2048)"
+                            text-inside />
                     </Tooltip>
                     <div>
                         <Poptip trigger="hover">
@@ -124,7 +121,7 @@ export default {
         addPull() {
             this.$Modal.confirm({
                 title: "拉流转发",
-                onOk() {
+                onOk: () => {
                     window.ajax
                         .getJSON("/hls/pull", {
                             target: this.remoteAddr,
