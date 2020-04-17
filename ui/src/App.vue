@@ -1,10 +1,6 @@
 <template>
-    <div>
-        <Button @click="addPull" type="success">拉流转发</Button>
-        <Spin fix v-if="Rooms==null">
-            <Icon type="ios-loading" size="18" class="demo-spin-icon-load"></Icon>
-            <div>Loading</div>
-        </Spin>
+    <div v-loading="Rooms==null">
+        <template v-if="Rooms==null"></template>
         <div v-else-if="Rooms.length==0" class="empty">
             <Icon type="md-wine" size="50" />没有任何房间
         </div>
@@ -49,6 +45,13 @@
                 </ButtonGroup>
             </Card>
         </div>
+        <mu-dialog title="拉流转发" width="360" :open.sync="openPull">
+            <mu-text-field v-model="remoteAddr" label="hls url" label-float help-text="Please enter URL of m3u8...">
+            </mu-text-field>
+            <mu-text-field v-model="streamPath" label="streamPath" label-float
+                help-text="Please enter streamPath to publish."></mu-text-field>
+            <mu-button slot="actions" flat color="primary" @click="addPull">确定</mu-button>
+        </mu-dialog>
     </div>
 </template>
 
@@ -64,10 +67,10 @@ export default {
             currentStream: null,
             Rooms: null,
             remoteAddr: "",
-            streamPath: ""
+            streamPath: "",
+            openPull: false
         };
     },
-
     methods: {
         showIndexM3u8(item) {
             this.$Modal.info({
@@ -94,7 +97,7 @@ export default {
             });
         },
         fetchlist() {
-            listES = new EventSource("/hls/list");
+            listES = new EventSource(this.apiHost + "/hls/list");
             listES.onmessage = evt => {
                 if (!evt.data) return;
                 this.Rooms = JSON.parse(evt.data) || [];
@@ -106,8 +109,10 @@ export default {
             };
         },
         saveTs(item) {
-            let req = window.ajax.get(
-                "/hls/save?streamPath=" + item.TSInfo.RoomInfo.StreamPath
+            let req = this.ajax.get(
+                this.apiHost +
+                    "/hls/save?streamPath=" +
+                    item.TSInfo.RoomInfo.StreamPath
             );
             this.$Notice.open({
                 title: "正在保存TS文件",
@@ -119,71 +124,42 @@ export default {
             });
         },
         addPull() {
-            this.$Modal.confirm({
-                title: "拉流转发",
-                onOk: () => {
-                    window.ajax
-                        .getJSON("/hls/pull", {
-                            target: this.remoteAddr,
-                            streamPath: this.streamPath
-                        })
-                        .then(x => {
-                            if (x.code == 0) {
-                                this.$Message.success({
-                                    title: "提示",
-                                    content: "已启动拉流"
-                                });
-                            } else {
-                                this.$Message.error({
-                                    title: "提示",
-                                    content: x.msg
-                                });
-                            }
-                        });
-                },
-                render: h => {
-                    return h("div", {}, [
-                        h("Input", {
-                            props: {
-                                value: this.remoteAddr,
-                                autofocus: true,
-                                placeholder: "Please enter URL of m3u8..."
-                            },
-                            on: {
-                                input: val => {
-                                    this.remoteAddr = val;
-                                }
-                            }
-                        }),
-                        h("Input", {
-                            props: {
-                                value: this.streamPath,
-                                placeholder:
-                                    "Please enter streamPath to publish."
-                            },
-                            on: {
-                                input: val => {
-                                    this.streamPath = val;
-                                }
-                            }
-                        })
-                    ]);
-                }
-            });
+            this.openPull = false;
+            this.ajax
+                .getJSON(this.apiHost + "/hls/pull", {
+                    target: this.remoteAddr,
+                    streamPath: this.streamPath
+                })
+                .then(x => {
+                    if (x.code == 0) {
+                        this.$toast.success("已启动拉流");
+                    } else {
+                        this.$toast.error(x.msg);
+                    }
+                });
         }
     },
     mounted() {
         this.fetchlist();
+        this.$parent.menus = [
+            {
+                label: "拉流转发",
+                action: () => {
+                    this.openPull = true;
+                }
+            }
+        ];
     },
-    deactivated() {
+    destroyed() {
         listES.close();
+        this.$parent.menus = [];
     }
 };
 </script>
 
 <style>
 .empty {
-    color: #eb5e46;
+    color: #ffc107;
     width: 100%;
     min-height: 500px;
     display: flex;

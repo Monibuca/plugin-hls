@@ -1,12 +1,13 @@
-package hlsplugin
+package hls
 
 import (
 	"errors"
 	"fmt"
-	"github.com/Monibuca/engine/util"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/Monibuca/engine/util"
 )
 
 const (

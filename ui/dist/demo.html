@@ -1,0 +1,19 @@
+<meta charset="utf-8">
+<title>plugin-hls demo</title>
+<script src="https://unpkg.com/vue"></script>
+<script src="./plugin-hls.umd.js"></script>
+
+<link rel="stylesheet" href="./plugin-hls.css">
+
+
+<div id="app">
+  <demo></demo>
+</div>
+
+<script>
+new Vue({
+  components: {
+    demo: plugin-hls
+  }
+}).$mount('#app')
+</script>

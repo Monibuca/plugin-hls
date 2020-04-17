@@ -1,4 +1,4 @@
-package hlsplugin
+package hls
 
 import (
 	"errors"

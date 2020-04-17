@@ -1,4 +1,4 @@
-package hlsplugin
+package hls
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 
 	. "github.com/Monibuca/engine"
 	. "github.com/Monibuca/engine/util"
-	. "github.com/Monibuca/tsplugin"
+	. "github.com/Monibuca/plugin-ts"
 	"github.com/quangngotan95/go-m3u8/m3u8"
 )
 
@@ -30,11 +30,9 @@ var config struct {
 
 func init() {
 	InstallPlugin(&PluginConfig{
-		Name:    "HLS",
-		Type:    PLUGIN_PUBLISHER | PLUGIN_HOOK,
-		UI:      CurrentDir("dashboard", "ui", "plugin-hls.min.js"),
-		Version: "1.0.6",
-		Config:  &config,
+		Name:   "HLS",
+		Type:   PLUGIN_PUBLISHER | PLUGIN_HOOK,
+		Config: &config,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite {
@@ -43,6 +41,7 @@ func init() {
 		},
 	})
 	http.HandleFunc("/hls/list", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		sse := NewSSE(w, r.Context())
 		var err error
 		for tick := time.NewTicker(time.Second); err == nil; <-tick.C {
