@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	. "github.com/Monibuca/engine"
-	"github.com/Monibuca/engine/avformat"
-	"github.com/Monibuca/engine/avformat/mpegts"
+	. "github.com/Monibuca/engine/v2"
+	"github.com/Monibuca/engine/v2/avformat"
+	"github.com/Monibuca/engine/v2/avformat/mpegts"
 )
 
-func writeHLS(r *Room) {
+func writeHLS(r *Stream) {
 	var avc avformat.AVCDecoderConfigurationRecord // AVCDecoderConfigurationRecord(mpegts)
 	var asc avformat.AudioSpecificConfig           // AudioSpecificConfig(mpegts)
 	var hls_path string                            // hls ts file path
@@ -26,17 +26,17 @@ func writeHLS(r *Room) {
 	var atwrite bool
 	var video_cc uint16
 	var audio_cc uint16
-	outStream := OutputStream{}
+	outStream := Subscriber{}
 	outStream.Type = "HLS"
 	outStream.ID = "HLSWriter"
 	sendHandler := func(p *avformat.SendPacket) (err error) {
 		var packet mpegts.MpegTsPESPacket
-		if p.Packet.Type == avformat.FLV_TAG_TYPE_VIDEO {
+		if p.Type == avformat.FLV_TAG_TYPE_VIDEO {
 			if packet, err = rtmpVideoPacketToPES(p, avc); err != nil {
 				return
 			}
-			video := p.Packet
-			if video.IsKeyFrame() {
+			video := p
+			if video.IsKeyFrame {
 				// 当前的时间戳减去上一个ts切片的时间戳
 				if int64(p.Timestamp-vwrite_time) >= hls_fragment {
 					//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
@@ -70,7 +70,7 @@ func writeHLS(r *Room) {
 
 			frame := new(mpegts.MpegtsPESFrame)
 			frame.Pid = 0x101
-			frame.IsKeyFrame = video.IsKeyFrame()
+			frame.IsKeyFrame = video.IsKeyFrame
 			frame.ContinuityCounter = byte(video_cc % 16)
 			frame.ProgramClockReferenceBase = uint64(video.Timestamp) * 90
 			if err = mpegts.WritePESPacket(hls_segment_data, frame, packet); err != nil {
@@ -78,7 +78,7 @@ func writeHLS(r *Room) {
 			}
 
 			video_cc = uint16(frame.ContinuityCounter)
-		} else if p.Packet.Type == avformat.FLV_TAG_TYPE_AUDIO {
+		} else if p.Type == avformat.FLV_TAG_TYPE_AUDIO {
 			if atwrite {
 				var packet mpegts.MpegTsPESPacket
 				if packet, err = rtmpAudioPacketToPES(p, asc); err != nil {
@@ -99,7 +99,7 @@ func writeHLS(r *Room) {
 				return nil
 			}
 
-			if asc, err = decodeAudioSpecificConfig(p.Packet); err != nil {
+			if asc, err = decodeAudioSpecificConfig(p.AVPacket); err != nil {
 				return
 			}
 
@@ -107,8 +107,8 @@ func writeHLS(r *Room) {
 		}
 		return
 	}
-	outStream.SendHandler = func(packet *avformat.SendPacket) (err error) {
-		if packet.Packet.Type == avformat.FLV_TAG_TYPE_AUDIO {
+	outStream.OnData = func(packet *avformat.SendPacket) (err error) {
+		if packet.Type == avformat.FLV_TAG_TYPE_AUDIO {
 			return nil
 		}
 		if avc, err = decodeAVCDecoderConfigurationRecord(packet); err != nil {
@@ -137,8 +137,8 @@ func writeHLS(r *Room) {
 
 		hls_segment_data = &bytes.Buffer{}
 		hls_segment_count = 0
-		outStream.SendHandler = sendHandler
+		outStream.OnData = sendHandler
 		return
 	}
-	go outStream.Play(r.StreamPath)
+	go outStream.Subscribe(r.StreamPath)
 }

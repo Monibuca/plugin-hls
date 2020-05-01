@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/Monibuca/engine"
-	. "github.com/Monibuca/engine/util"
+	. "github.com/Monibuca/engine/v2"
+	. "github.com/Monibuca/engine/v2/util"
 	. "github.com/Monibuca/plugin-ts"
 	"github.com/quangngotan95/go-m3u8/m3u8"
 )
@@ -68,7 +68,7 @@ func init() {
 		var err error
 		p.Video.Req, err = http.NewRequest("GET", targetURL, nil)
 		if err == nil {
-			p.Publish(streamPath, p)
+			p.Publish(streamPath)
 			w.Write([]byte(`{"code":0}`))
 		} else {
 			w.Write([]byte(fmt.Sprintf(`{"code":1,"msg":"%s"}`, err.Error())))
@@ -121,16 +121,18 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 	return
 }
 func (p *HLS) run(info *M3u8Info) {
+	//请求失败自动退出
+	req:=info.Req.WithContext(p)
 	client := http.Client{Timeout: time.Second * 5}
 	sequence := 0
 	lastTs := make(map[string]bool)
-	resp, err := client.Do(info.Req)
+	resp, err := client.Do(req)
 	defer func() {
 		log.Printf("hls %s exit:%v", p.StreamPath, err)
 		p.Cancel()
 	}()
 	errcount := 0
-	for ; err == nil && p.Err() == nil; resp, err = client.Do(info.Req) {
+	for ; err == nil; resp, err = client.Do(req) {
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
@@ -168,12 +170,12 @@ func (p *HLS) run(info *M3u8Info) {
 			for _, v := range tsItems {
 				tsCost := TSCost{}
 				tsUrl, _ := info.Req.URL.Parse(v.Segment)
-				tsReq, _ := http.NewRequest("GET", tsUrl.String(), nil)
+				tsReq, _ := http.NewRequestWithContext(p, "GET", tsUrl.String(), nil)
 				tsReq.Header = p.TsHead
 				t1 := time.Now()
-				if tsRes, err := client.Do(tsReq); err == nil && p.Err() == nil {
+				if tsRes, err := client.Do(tsReq); err == nil {
 					info.TSCount++
-					if body, err := ioutil.ReadAll(tsRes.Body); err == nil && p.Err() == nil {
+					if body, err := ioutil.ReadAll(tsRes.Body); err == nil {
 						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
 						if p.SaveContext != nil && p.SaveContext.Err() == nil {
 							os.MkdirAll(filepath.Join(config.Path, p.StreamPath), 0666)
@@ -181,12 +183,13 @@ func (p *HLS) run(info *M3u8Info) {
 						}
 						t1 = time.Now()
 						beginLen := len(p.TsPesPktChan)
-						if err = p.Feed(bytes.NewReader(body)); p.Err() != nil {
+						if err = p.Feed(bytes.NewReader(body)); err != nil {
 							close(p.TsPesPktChan)
+						} else {
+							tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
+							tsCost.BufferLength = len(p.TsPesPktChan)
+							p.PesCount = tsCost.BufferLength - beginLen
 						}
-						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
-						tsCost.BufferLength = len(p.TsPesPktChan)
-						p.PesCount = tsCost.BufferLength - beginLen
 					} else if err != nil {
 						log.Printf("%s readTs:%v", p.StreamPath, err)
 					}
@@ -207,15 +210,16 @@ func (p *HLS) run(info *M3u8Info) {
 		}
 	}
 }
-func (p *HLS) OnClosed() {
-	p.TS.OnClosed()
-	collection.Delete(p.StreamPath)
-}
-func (p *HLS) Publish(streamName string, publisher Publisher) (result bool) {
-	if result = p.TS.Publish(streamName, publisher); result {
+
+func (p *HLS) Publish(streamName string) (result bool) {
+	if result = p.TS.Publish(streamName); result {
+		p.Type = "HLS"
 		p.HLSInfo.TSInfo = &p.TS.TSInfo
 		collection.Store(streamName, p)
-		go p.run(&p.HLSInfo.Video)
+		go func(){
+			p.run(&p.HLSInfo.Video)
+			collection.Delete(streamName)
+		}()
 		if p.HLSInfo.Audio.Req != nil {
 			go p.run(&p.HLSInfo.Audio)
 		}

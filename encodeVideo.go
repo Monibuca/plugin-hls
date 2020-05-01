@@ -4,20 +4,20 @@ import (
 	"errors"
 	"os"
 
-	"github.com/Monibuca/engine/avformat"
-	"github.com/Monibuca/engine/avformat/mpegts"
-	"github.com/Monibuca/engine/util"
+	"github.com/Monibuca/engine/v2/avformat"
+	"github.com/Monibuca/engine/v2/avformat/mpegts"
+	"github.com/Monibuca/engine/v2/util"
 )
 
-func decodeAVCDecoderConfigurationRecord(p *avformat.SendPacket) (avc_dcr avformat.AVCDecoderConfigurationRecord, err error) {
-	video := p.Packet
+func decodeAVCDecoderConfigurationRecord(video *avformat.SendPacket) (avc_dcr avformat.AVCDecoderConfigurationRecord, err error) {
 	if len(video.Payload) < 13 {
 		err = errors.New("decodeAVCDecoderConfigurationRecord error 1")
 		return
 	}
 
 	// 如果视频的格式是AVC(H.264)的话,VideoTagHeader会多出4个字节的信息AVCPacketType 和 CompositionTime
-	if video.VideoFrameType != 1 && video.VideoFrameType != 2 {
+	vft := video.VideoFrameType()
+	if vft != 1 && vft != 2 {
 		err = errors.New("decodeAVCDecoderConfigurationRecord error : this packet is not AVC(H264)")
 		return
 	}
@@ -68,12 +68,12 @@ func rtmpVideoPacketToPES(video *avformat.SendPacket, avc_dcr avformat.AVCDecode
 	// cts = (pts - dts) / 90
 	var cts uint32
 	var avcPktType uint32
-	if avcPktType, err = util.ByteToUint32N(video.Packet.Payload[1:2]); err != nil {
+	if avcPktType, err = util.ByteToUint32N(video.Payload[1:2]); err != nil {
 		return
 	}
 
 	if avcPktType == 1 {
-		if cts, err = util.ByteToUint32N(video.Packet.Payload[2:5]); err != nil {
+		if cts, err = util.ByteToUint32N(video.Payload[2:5]); err != nil {
 			return
 		}
 	}
@@ -95,7 +95,7 @@ func rtmpVideoPacketToPES(video *avformat.SendPacket, avc_dcr avformat.AVCDecode
 }
 func rtmpVideoPacketToPESPreprocess(video *avformat.SendPacket, avc_dcr avformat.AVCDecoderConfigurationRecord) (data []byte, err error) {
 	// nalu array
-	if data, err = rtmpVideoPacketSplitNaluAndAppendAudSPSPPS(video.Packet.Payload, &avc_dcr, uint32(avc_dcr.LengthSizeMinusOne+1)); err != nil {
+	if data, err = rtmpVideoPacketSplitNaluAndAppendAudSPSPPS(video.Payload, &avc_dcr, uint32(avc_dcr.LengthSizeMinusOne+1)); err != nil {
 		return
 	}
 

@@ -3,13 +3,11 @@ package hls
 import (
 	"errors"
 
-	"github.com/Monibuca/engine/avformat"
-	"github.com/Monibuca/engine/avformat/mpegts"
+	"github.com/Monibuca/engine/v2/avformat"
+	"github.com/Monibuca/engine/v2/avformat/mpegts"
 )
 
-func rtmpAudioPacketToPESPreprocess(audio *avformat.AVPacket, aac_asc avformat.AudioSpecificConfig) (data []byte, err error) {
-	aacRaw := audio.Payload[2:]
-
+func rtmpAudioPacketToPESPreprocess(aacRaw []byte, aac_asc avformat.AudioSpecificConfig) (data []byte, err error) {
 	// adts
 	if _, data, err = avformat.AudioSpecificConfigToADTS(aac_asc, len(aacRaw)); err != nil {
 		return
@@ -23,7 +21,7 @@ func rtmpAudioPacketToPESPreprocess(audio *avformat.AVPacket, aac_asc avformat.A
 func rtmpAudioPacketToPES(audio *avformat.SendPacket, aac_asc avformat.AudioSpecificConfig) (packet mpegts.MpegTsPESPacket, err error) {
 	var data []byte
 
-	if data, err = rtmpAudioPacketToPESPreprocess(audio.Packet, aac_asc); err != nil {
+	if data, err = rtmpAudioPacketToPESPreprocess(audio.Payload[2:], aac_asc); err != nil {
 		return
 	}
 
