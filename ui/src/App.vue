@@ -1,50 +1,28 @@
 <template>
-    <div v-loading="Rooms==null">
-        <template v-if="Rooms==null"></template>
-        <div v-else-if="Rooms.length==0" class="empty">
-            <Icon type="md-wine" size="50" />没有任何房间
-        </div>
-        <div class="layout" v-else>
-            <Card v-for="item in Rooms" :key="item.TSInfo.RoomInfo.StreamPath" class="room">
-                <p slot="title">{{item.TSInfo.RoomInfo.StreamPath}}</p>
-                <StartTime slot="extra" :value="item.TSInfo.RoomInfo.StartTime"></StartTime>
-                <div class="hls-info">
-                    <Tooltip :content="item.TSInfo.BufferLength+'/2048'" style="width: 240px">
+    <div>
+        <mu-data-table :columns="columns" :data="Streams">
+            <template #expand="{row:item}">
+                <div>
+                    <m-button @click="showIndexM3u8(item)">📃Index</m-button>
+                    <m-button @click="showAudioM3u8(item)" v-if="item.Audio.LastM3u8.length">📑Audio</m-button>
+                    <m-button @click="showVideoM3u8(item)">📑Video</m-button>
+                    <m-button @click="saveTs(item)">💾Save</m-button>
+                </div>
+            </template>
+            <template #default="{row:item}">
+                <td>{{item.TSInfo.StreamInfo.StreamPath}}</td>
+                <td><StartTime :value="item.TSInfo.StreamInfo.StartTime"></StartTime></td>
+                <td><Tooltip :content="item.TSInfo.BufferLength+'/2048'" style="width: 240px">
                         <Progress :stroke-width="20" :percent="Math.ceil(item.TSInfo.BufferLength*100/2048)"
                             text-inside />
-                    </Tooltip>
-                    <div>
-                        <Poptip trigger="hover">
-                            <table class="ts-info" slot="content">
-                                <tr v-for="(tsInfo,index) in item.Audio.M3u8Info" :key="index">
-                                    <td v-for="(v,k) in tsInfo" :key="k">{{v}}</td>
-                                </tr>
-                            </table>
-                            📑 {{item.Audio.M3U8Count}}
-                        </Poptip>|
-                        <Poptip trigger="hover">
-                            <table class="ts-info" slot="content">
-                                <tr v-for="(tsInfo,index) in item.Video.M3u8Info" :key="index">
-                                    <td v-for="(v,k) in tsInfo" :key="k">{{v}}</td>
-                                </tr>
-                            </table>
-                            {{item.Video.M3U8Count}}
-                        </Poptip>
-                        💿 {{item.Audio.TSCount}}|{{item.Video.TSCount}} 📜
-                        {{item.TSInfo.TotalPesCount}}
-                        📼
-                        {{item.TSInfo.RoomInfo.AudioInfo.PacketCount}} 📺
-                        {{item.TSInfo.RoomInfo.VideoInfo.PacketCount}}
-                    </div>
-                </div>
-                <ButtonGroup>
-                    <Button @click="showIndexM3u8(item)">📃Index</Button>
-                    <Button @click="showAudioM3u8(item)" v-if="item.Audio.LastM3u8.length">📑Audio</Button>
-                    <Button @click="showVideoM3u8(item)">📑Video</Button>
-                    <Button @click="saveTs(item)">💾Save</Button>
-                </ButtonGroup>
-            </Card>
-        </div>
+                    </Tooltip></td>
+                    <td>{{item.TSInfo.TotalPesCount}}</td>
+                    <td>{{item.Audio.M3U8Count}}</td>
+                    <td>{{item.Audio.TSCount}}</td>
+                    <td>{{item.Video.M3U8Count}}</td>
+                    <td>{{item.Video.TSCount}}</td>
+            <template>
+        </mu-data-table>
         <mu-dialog title="拉流转发" width="360" :open.sync="openPull">
             <mu-text-field v-model="remoteAddr" label="hls url" label-float help-text="Please enter URL of m3u8...">
             </mu-text-field>
@@ -57,18 +35,15 @@
 
 <script>
 let listES = null;
-import StartTime from "./components/StartTime";
 export default {
-    components: {
-        StartTime
-    },
     data() {
         return {
             currentStream: null,
-            Rooms: null,
+            Streams: [],
             remoteAddr: "",
             streamPath: "",
-            openPull: false
+            openPull: false,
+            columns:["StreamPath","开始时间","缓冲","PES总数","音频m3u8数","音频ts数","视频m3u8数","视频ts数"].map(title=>({title}))
         };
     },
     methods: {
@@ -100,9 +75,9 @@ export default {
             listES = new EventSource(this.apiHost + "/hls/list");
             listES.onmessage = evt => {
                 if (!evt.data) return;
-                this.Rooms = JSON.parse(evt.data) || [];
-                this.Rooms.sort((a, b) =>
-                    a.TSInfo.RoomInfo.StreamPath > b.TSInfo.RoomInfo.StreamPath
+                this.Streams = JSON.parse(evt.data) || [];
+                this.Streams.sort((a, b) =>
+                    a.TSInfo.StreamInfo.StreamPath > b.TSInfo.StreamInfo.StreamPath
                         ? 1
                         : -1
                 );
@@ -112,7 +87,7 @@ export default {
             let req = this.ajax.get(
                 this.apiHost +
                     "/hls/save?streamPath=" +
-                    item.TSInfo.RoomInfo.StreamPath
+                    item.TSInfo.StreamInfo.StreamPath
             );
             this.$Notice.open({
                 title: "正在保存TS文件",
@@ -141,18 +116,20 @@ export default {
     },
     mounted() {
         this.fetchlist();
-        this.$parent.menus = [
+        let _this = this
+        this.$parent.titleOps = [
             {
-                label: "拉流转发",
-                action: () => {
-                    this.openPull = true;
+                template:"<m-button @click='onClick'>拉流转发</m-button>",
+                methods:{
+                    onClick(){
+                        _this.openPull = true;
+                    }
                 }
             }
         ];
     },
     destroyed() {
         listES.close();
-        this.$parent.menus = [];
     }
 };
 </script>

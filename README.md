@@ -33,6 +33,6 @@ import 	. "github.com/Monibuca/plugin-ts"
 func demo(){
     p:=new(HLS)
     p.Video.Req = http.NewRequest("GET","http://xxxx.com/demo.m3u8", nil)
-    p.Publish("live/hls",p)
+    p.Publish("live/hls")
 }
 ```
