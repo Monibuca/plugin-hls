@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,6 +75,21 @@ func init() {
 			w.Write([]byte(fmt.Sprintf(`{"code":1,"msg":"%s"}`, err.Error())))
 		}
 	})
+	http.HandleFunc("/hls/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
+				io.Copy(w, f)
+			} else {
+				w.WriteHeader(404)
+			}
+		} else if strings.HasSuffix(r.URL.Path, ".ts") {
+			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
+				io.Copy(w, f)
+			} else {
+				w.WriteHeader(404)
+			}
+		}
+	})
 }
 
 // HLS 发布者
@@ -122,7 +138,7 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 }
 func (p *HLS) run(info *M3u8Info) {
 	//请求失败自动退出
-	req:=info.Req.WithContext(p)
+	req := info.Req.WithContext(p)
 	client := http.Client{Timeout: time.Second * 5}
 	sequence := 0
 	lastTs := make(map[string]bool)
@@ -216,7 +232,7 @@ func (p *HLS) Publish(streamName string) (result bool) {
 		p.Type = "HLS"
 		p.HLSInfo.TSInfo = &p.TS.TSInfo
 		collection.Store(streamName, p)
-		go func(){
+		go func() {
 			p.run(&p.HLSInfo.Video)
 			collection.Delete(streamName)
 		}()

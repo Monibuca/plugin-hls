@@ -8,8 +8,12 @@ github.com/Monibuca/engine/v2 v2.0.0-alpha2 h1:45yazqnnxEEcfHcOJGuIr1xtnBzQT6cPv
 github.com/Monibuca/engine/v2 v2.0.0-alpha2/go.mod h1:34EYjjV15G6myuHOKaJkO7y5tJ1Arq/NfC9Weacr2mc=
 github.com/Monibuca/engine/v2 v2.0.0 h1:8FjaScrtN8QdbcxO9zZYABMC0Re3I1O1T4p94zAXYb0=
 github.com/Monibuca/engine/v2 v2.0.0/go.mod h1:34EYjjV15G6myuHOKaJkO7y5tJ1Arq/NfC9Weacr2mc=
+github.com/Monibuca/engine/v2 v2.1.3 h1:RGhMRjAB9Jxte06OgQX+2G8TaXJ6JyYllnBxmEx6yQo=
+github.com/Monibuca/engine/v2 v2.1.3/go.mod h1:34EYjjV15G6myuHOKaJkO7y5tJ1Arq/NfC9Weacr2mc=
 github.com/Monibuca/plugin-ts v1.2.0 h1:SmEK4ObVTjkeZbNRjnv9xqdOGx2OIbo/tOwlv0nWAQg=
 github.com/Monibuca/plugin-ts v1.2.0/go.mod h1:F75q9q3TFG3u/UVBBR67p1BN1Oc/Vp6fe7AGZzTCJ40=
+github.com/Monibuca/plugin-ts v1.2.1 h1:Y2QgEal9/ot43QEvtzRkmA8yk+N2uzieAzKuujZJFMs=
+github.com/Monibuca/plugin-ts v1.2.1/go.mod h1:MZsdv34Od1Kh1WOkuqIAO/t2irjzW39RMO9WbpFks4g=
 github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d h1:G0m3OIz70MZUWq3EgK3CesDbo8upS2Vm9/P3FtgI+Jk=
 github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
