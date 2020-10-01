@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	. "github.com/Monibuca/engine/v2"
 	"github.com/Monibuca/engine/v2/avformat"
 	"github.com/Monibuca/engine/v2/avformat/mpegts"
 )
+
+var memoryTs sync.Map
 
 func writeHLS(r *Stream) {
 	var avc avformat.AVCDecoderConfigurationRecord // AVCDecoderConfigurationRecord(mpegts)
@@ -24,9 +27,9 @@ func writeHLS(r *Stream) {
 	var hls_segment_data *bytes.Buffer             // hls segment
 	var vwrite_time uint32
 	var atwrite bool
-	var video_cc uint16
-	var audio_cc uint16
-	outStream := Subscriber{}
+	var video_cc, audio_cc uint16
+	var outStream Subscriber
+	var ring = NewRing(4)
 	outStream.Type = "HLS"
 	outStream.ID = "HLSWriter"
 	sendHandler := func(p *avformat.SendPacket) (err error) {
@@ -43,10 +46,21 @@ func writeHLS(r *Stream) {
 
 					tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 
-					if err = writeHlsTsSegmentFile(filepath.Join(hls_path, tsFilename), hls_segment_data.Bytes()); err != nil {
-						return
+					tsData := hls_segment_data.Bytes()
+					tsFilePath := filepath.Join(hls_path, tsFilename)
+					if config.EnableWrite {
+						if err = writeHlsTsSegmentFile(tsFilePath, tsData); err != nil {
+							return
+						}
 					}
-
+					if config.EnableMemory {
+						ring.GetBuffer().Write(tsData)
+						ring.Payload = []byte(tsFilePath)
+						memoryTs.Store(tsFilePath, ring.RingItem)
+						if ring.NextW();len(ring.Payload) > 0 {
+							memoryTs.Delete(string(ring.Payload))
+						}
+					}
 					inf := PlaylistInf{
 						Duration: float64((video.Timestamp - vwrite_time) / 1000),
 						Title:    filepath.Base(hls_path) + "/" + tsFilename,
@@ -96,7 +110,7 @@ func writeHLS(r *Stream) {
 
 				audio_cc = uint16(frame.ContinuityCounter)
 
-				return nil
+				return
 			}
 
 			if asc, err = decodeAudioSpecificConfig(p.AVPacket); err != nil {
@@ -108,7 +122,7 @@ func writeHLS(r *Stream) {
 		return
 	}
 	outStream.OnData = func(packet *avformat.SendPacket) (err error) {
-		if packet.Type == avformat.FLV_TAG_TYPE_AUDIO {
+		if *outStream.EnableVideo && packet.Type == avformat.FLV_TAG_TYPE_AUDIO {
 			return nil
 		}
 		if avc, err = decodeAVCDecoderConfigurationRecord(packet); err != nil {
@@ -129,7 +143,7 @@ func writeHLS(r *Stream) {
 
 		hls_path = filepath.Join(config.Path, r.StreamPath)
 		hls_m3u8_name = hls_path + ".m3u8"
-		os.MkdirAll(hls_path, os.ModePerm)
+		os.MkdirAll(hls_path, 0755)
 		if err = hls_playlist.Init(hls_m3u8_name); err != nil {
 			log.Println(err)
 			return
@@ -140,5 +154,16 @@ func writeHLS(r *Stream) {
 		outStream.OnData = sendHandler
 		return
 	}
-	go outStream.Subscribe(r.StreamPath)
+	if config.EnableMemory {
+		go func() {
+			if 	err:=outStream.Subscribe(r.StreamPath);err!=nil{
+				Println(err)
+			}
+			for i := 0; i < ring.Size; i++ {
+				memoryTs.Delete(string(ring.GetAt(i).Payload))
+			}
+		}()
+	} else {
+		go outStream.Subscribe(r.StreamPath)
+	}
 }

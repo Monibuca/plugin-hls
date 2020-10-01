@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/Monibuca/engine/v2/avformat/mpegts"
 	"io"
 	"io/ioutil"
 	"log"
@@ -23,20 +24,23 @@ import (
 
 var collection = sync.Map{}
 var config struct {
-	Fragment    int64
-	Window      int
-	EnableWrite bool   //启动HLS写文件
-	Path        string //存放路径
+	Fragment     int64
+	Window       int
+	EnableWrite  bool   //启动HLS写文件
+	EnableMemory bool   // 启动内存模式
+	Path         string //存放路径
 }
 
 func init() {
+	config.Fragment = 10
+	config.Window = 2
 	InstallPlugin(&PluginConfig{
 		Name:   "HLS",
 		Type:   PLUGIN_PUBLISHER | PLUGIN_HOOK,
 		Config: &config,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
-			if config.EnableWrite {
+			if config.EnableWrite || config.EnableMemory {
 				OnPublishHooks.AddHook(writeHLS)
 			}
 		},
@@ -76,17 +80,32 @@ func init() {
 		}
 	})
 	http.HandleFunc("/hls/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
 			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
 				io.Copy(w, f)
+				err = f.Close()
 			} else {
 				w.WriteHeader(404)
 			}
 		} else if strings.HasSuffix(r.URL.Path, ".ts") {
-			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
-				io.Copy(w, f)
+			tsPath := filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))
+			if config.EnableMemory {
+				if ringItem, ok := memoryTs.Load(tsPath); ok {
+					w.Write(mpegts.DefaultPATPacket)
+					w.Write(mpegts.DefaultPMTPacket)
+					ringItem.(*RingItem).Wait()
+					w.Write(ringItem.(*RingItem).Buffer.Bytes())
+				} else {
+					w.WriteHeader(404)
+				}
 			} else {
-				w.WriteHeader(404)
+				if f, err := os.Open(tsPath); err == nil {
+					io.Copy(w, f)
+					err = f.Close()
+				} else {
+					w.WriteHeader(404)
+				}
 			}
 		}
 	})
