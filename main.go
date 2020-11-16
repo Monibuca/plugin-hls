@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"github.com/Monibuca/engine/v2/avformat/mpegts"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Monibuca/engine/v2/avformat/mpegts"
 
 	. "github.com/Monibuca/engine/v2"
 	. "github.com/Monibuca/engine/v2/util"
@@ -67,6 +68,7 @@ func init() {
 		}
 	})
 	http.HandleFunc("/hls/pull", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		targetURL := r.URL.Query().Get("target")
 		streamPath := r.URL.Query().Get("streamPath")
 		p := new(HLS)
