@@ -221,7 +221,7 @@ func (p *HLS) run(info *M3u8Info) {
 						t1 = time.Now()
 						beginLen := len(p.TsPesPktChan)
 						if err = p.Feed(bytes.NewReader(body)); err != nil {
-							close(p.TsPesPktChan)
+							//close(p.TsPesPktChan)
 						} else {
 							tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
 							tsCost.BufferLength = len(p.TsPesPktChan)
