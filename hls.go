@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Monibuca/engine/v2/util"
+	"github.com/Monibuca/utils/v3"
 )
 
 const (
@@ -120,7 +120,7 @@ func (this *Playlist) UpdateInf(filename string, tmpFilename string, inf Playlis
 	defer tmpFile.Close()
 
 	var ls []string
-	if ls, err = util.ReadFileLines(filename); err != nil {
+	if ls, err = utils.ReadFileLines(filename); err != nil {
 		return
 	}
 
@@ -186,7 +186,7 @@ func (this *Playlist) UpdateInf(filename string, tmpFilename string, inf Playlis
 
 func (this *Playlist) GetInfCount(filename string) (num int, err error) {
 	var ls []string
-	if ls, err = util.ReadFileLines(filename); err != nil {
+	if ls, err = utils.ReadFileLines(filename); err != nil {
 		return
 	}
 

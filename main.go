@@ -15,15 +15,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Monibuca/engine/v2/avformat/mpegts"
+	"github.com/Monibuca/utils/v3/codec/mpegts"
 
-	. "github.com/Monibuca/engine/v2"
-	. "github.com/Monibuca/engine/v2/util"
-	. "github.com/Monibuca/plugin-ts"
+	. "github.com/Monibuca/engine/v3"
+	. "github.com/Monibuca/plugin-ts/v3"
+	. "github.com/Monibuca/utils/v3"
 	"github.com/quangngotan95/go-m3u8/m3u8"
 )
 
-var collection = sync.Map{}
+var collection sync.Map
 var config struct {
 	Fragment     int64
 	Window       int
@@ -37,23 +37,25 @@ func init() {
 	config.Window = 2
 	InstallPlugin(&PluginConfig{
 		Name:   "HLS",
-		Type:   PLUGIN_PUBLISHER | PLUGIN_HOOK,
 		Config: &config,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
-				OnPublishHooks.AddHook(writeHLS)
+				onPublish := make(chan interface{})
+				AddHook(HOOK_PUBLISH, onPublish)
+				for v := range onPublish {
+					writeHLS(v.(*Stream))
+				}
 			}
 		},
 	})
 	http.HandleFunc("/hls/list", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 		sse := NewSSE(w, r.Context())
 		var err error
 		for tick := time.NewTicker(time.Second); err == nil; <-tick.C {
-			var info []*HLSInfo
+			var info []*HLS
 			collection.Range(func(key, value interface{}) bool {
-				info = append(info, &value.(*HLS).HLSInfo)
+				info = append(info, value.(*HLS))
 				return true
 			})
 			err = sse.WriteJSON(info)
@@ -96,8 +98,8 @@ func init() {
 				if ringItem, ok := memoryTs.Load(tsPath); ok {
 					w.Write(mpegts.DefaultPATPacket)
 					w.Write(mpegts.DefaultPMTPacket)
-					ringItem.(*RingItem).Wait()
-					w.Write(ringItem.(*RingItem).Buffer.Bytes())
+					ringItem.(*RingItem_Video).Wait()
+					w.Write(ringItem.(*RingItem_Video).Buffer.Bytes())
 				} else {
 					w.WriteHeader(404)
 				}
@@ -116,16 +118,10 @@ func init() {
 // HLS 发布者
 type HLS struct {
 	TS
-	HLSInfo
-	TsHead      http.Header     //用于提供cookie等特殊身份的http头
-	SaveContext context.Context //用来保存ts文件到服务器
-}
-
-// HLSInfo 可序列化信息，供控制台查看
-type HLSInfo struct {
-	Video  M3u8Info
-	Audio  M3u8Info
-	TSInfo *TSInfo
+	Video       M3u8Info
+	Audio       M3u8Info
+	TsHead      http.Header     `json:"-"` //用于提供cookie等特殊身份的http头
+	SaveContext context.Context `json:"-"` //用来保存ts文件到服务器
 }
 
 // M3u8Info m3u8文件的信息，用于拉取m3u8文件，和提供查询
@@ -166,7 +162,7 @@ func (p *HLS) run(info *M3u8Info) {
 	resp, err := client.Do(req)
 	defer func() {
 		log.Printf("hls %s exit:%v", p.StreamPath, err)
-		p.Cancel()
+		p.Close()
 	}()
 	errcount := 0
 	for ; err == nil; resp, err = client.Do(req) {
@@ -251,14 +247,13 @@ func (p *HLS) run(info *M3u8Info) {
 func (p *HLS) Publish(streamName string) (result bool) {
 	if result = p.TS.Publish(streamName); result {
 		p.Type = "HLS"
-		p.HLSInfo.TSInfo = &p.TS.TSInfo
 		collection.Store(streamName, p)
 		go func() {
-			p.run(&p.HLSInfo.Video)
+			p.run(&p.Video)
 			collection.Delete(streamName)
 		}()
-		if p.HLSInfo.Audio.Req != nil {
-			go p.run(&p.HLSInfo.Audio)
+		if p.Audio.Req != nil {
+			go p.run(&p.Audio)
 		}
 	}
 	return
