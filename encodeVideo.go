@@ -56,6 +56,7 @@ func VideoPacketToPES(pack VideoPack, avc_dcr codec.AVCDecoderConfigurationRecor
 			data = append(data, codec.NALU_Delimiter2...)
 			data = append(data, avc_dcr.PictureParameterSetNALUnit...)
 		}
+		fallthrough
 	default:
 		data = append(data, codec.NALU_Delimiter1...)
 		data = append(data, pack.Payload...)

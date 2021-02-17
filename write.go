@@ -18,17 +18,12 @@ import (
 var memoryTs sync.Map
 
 func writeHLS(r *Stream) {
-	var hls_path string                // hls ts file path
-	var hls_m3u8_name string           // hls m3u8 name
-	var hls_playlist Playlist          // hls play list
+	
 	var hls_fragment int64             // hls fragment
 	var hls_segment_count uint32       // hls segment count
-	var hls_segment_data *bytes.Buffer // hls segment
 	var vwrite_time uint32
 	var video_cc, audio_cc uint16
-	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS", OnAudio: func(pack AudioPack) {
-
-	}}
+	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS"}
 
 	var ring = NewRing_Video()
 
@@ -36,8 +31,9 @@ func writeHLS(r *Stream) {
 		utils.Println(err)
 		return
 	}
-	at := outStream.GetAudioTrack("aac")
-	vt := outStream.GetVideoTrack("h264")
+	vt := outStream.WaitVideoTrack("h264")
+	at := outStream.WaitAudioTrack("aac")
+	
 	avc, err := decodeAVCDecoderConfigurationRecord(vt.RtmpTag[5:])
 	if err != nil {
 		return
@@ -52,22 +48,21 @@ func writeHLS(r *Stream) {
 		hls_fragment = 10000
 	}
 
-	hls_playlist = Playlist{
+	hls_playlist := Playlist{
 		Version:        3,
 		Sequence:       0,
 		Targetduration: int(hls_fragment / 666), // hlsFragment * 1.5 / 1000
 	}
 
-	hls_path = filepath.Join(config.Path, r.StreamPath)
-	hls_m3u8_name = hls_path + ".m3u8"
+	hls_path := filepath.Join(config.Path, r.StreamPath)
+	hls_m3u8_name := hls_path + ".m3u8"
 	os.MkdirAll(hls_path, 0755)
 	if err = hls_playlist.Init(hls_m3u8_name); err != nil {
 		log.Println(err)
 		return
 	}
 
-	hls_segment_data = &bytes.Buffer{}
-	hls_segment_count = 0
+	hls_segment_data := &bytes.Buffer{}
 	outStream.OnVideo = func(pack VideoPack) {
 		packet, err := VideoPacketToPES(pack, avc)
 		if err != nil {
@@ -143,7 +138,7 @@ func writeHLS(r *Stream) {
 		}
 		audio_cc = uint16(frame.ContinuityCounter)
 	}
-	outStream.Play(outStream.Context, at, vt)
+	outStream.Play(at, vt)
 	if config.EnableMemory {
 		for i := byte(0); i <= 255; i++ {
 			memoryTs.Delete(string(ring.GetAt(i).Payload))

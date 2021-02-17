@@ -41,11 +41,9 @@ func init() {
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
-				onPublish := make(chan interface{})
-				AddHook(HOOK_PUBLISH, onPublish)
-				for v := range onPublish {
+				AddHook(HOOK_PUBLISH, func(v interface{}){
 					writeHLS(v.(*Stream))
-				}
+				})
 			}
 		},
 	})

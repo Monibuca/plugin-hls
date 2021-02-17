@@ -50,7 +50,7 @@ type PlaylistInf struct {
 func (this *Playlist) Init(filename string) (err error) {
 	defer this.handleError()
 
-	if util.Exist(filename) {
+	if utils.Exist(filename) {
 		if err = os.Remove(filename); err != nil {
 			return
 		}
