@@ -2,8 +2,12 @@ github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/Monibuca/engine/v3 v3.0.0-alpha4 h1:kAStDd1p9tlSQeNyAAmb7vrPL2UCz7LFTzw5LdbGxBI=
 github.com/Monibuca/engine/v3 v3.0.0-alpha4/go.mod h1:V0/kfen6K5O/RLXHPsZj4DF/LboDZ0OqfeCfn35bWMo=
+github.com/Monibuca/engine/v3 v3.0.0-alpha5 h1:sXLg39SBkeiVkGcbcinXuRrYyClJvMVirxA5axiUD7s=
+github.com/Monibuca/engine/v3 v3.0.0-alpha5/go.mod h1:V0/kfen6K5O/RLXHPsZj4DF/LboDZ0OqfeCfn35bWMo=
 github.com/Monibuca/plugin-ts/v3 v3.0.0-20210214150411-2242d4e0eae8 h1:xpk0Alb5je4qrTh2qKjZJ8B0J/iESep5kDd9QnL5LEY=
 github.com/Monibuca/plugin-ts/v3 v3.0.0-20210214150411-2242d4e0eae8/go.mod h1:pYnSnIAqurUI4LvCqRWMW3MrlWbt2SK4Cgf89lgKOb0=
+github.com/Monibuca/plugin-ts/v3 v3.0.0-20210217135308-9ecd1018a67d h1:ulFF3PUShRNiL/U6ZSOBBg3gLDXlb7VzfOc1qNgQQpg=
+github.com/Monibuca/plugin-ts/v3 v3.0.0-20210217135308-9ecd1018a67d/go.mod h1:pYnSnIAqurUI4LvCqRWMW3MrlWbt2SK4Cgf89lgKOb0=
 github.com/Monibuca/utils/v3 v3.0.0-alpha4 h1:pecYA89kWmtGOeY6R99d4T1epPJ1wc+jFrrJY13VD04=
 github.com/Monibuca/utils/v3 v3.0.0-alpha4/go.mod h1:3xYmhQbgAZBHLyIMteUCd1va+1z/xnd72B585mCaT3c=
 github.com/funny/slab v0.0.0-20180511031532-b1fad5e5d478 h1:Db9StoJ6RZN3YttC0Pm0I4Y5izITRYch3RMbT59BYN0=

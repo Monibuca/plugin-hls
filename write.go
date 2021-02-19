@@ -18,27 +18,32 @@ import (
 var memoryTs sync.Map
 
 func writeHLS(r *Stream) {
-	
-	var hls_fragment int64             // hls fragment
-	var hls_segment_count uint32       // hls segment count
+	var err error
+	var hls_fragment int64       // hls fragment
+	var hls_segment_count uint32 // hls segment count
 	var vwrite_time uint32
 	var video_cc, audio_cc uint16
 	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS"}
 
 	var ring = NewRing_Video()
 
-	if err := outStream.Subscribe(r.StreamPath); err != nil {
+	if err = outStream.Subscribe(r.StreamPath); err != nil {
 		utils.Println(err)
 		return
 	}
 	vt := outStream.WaitVideoTrack("h264")
 	at := outStream.WaitAudioTrack("aac")
-	
-	avc, err := decodeAVCDecoderConfigurationRecord(vt.RtmpTag[5:])
+	var avc codec.AVCDecoderConfigurationRecord
+	if vt != nil {
+		avc, err = decodeAVCDecoderConfigurationRecord(vt.RtmpTag[5:])
+	}
 	if err != nil {
 		return
 	}
-	asc, err := decodeAudioSpecificConfig(at.RtmpTag)
+	var asc codec.AudioSpecificConfig
+	if at != nil {
+		asc, err = decodeAudioSpecificConfig(at.RtmpTag)
+	}
 	if err != nil {
 		return
 	}
@@ -124,7 +129,7 @@ func writeHLS(r *Stream) {
 	}
 	outStream.OnAudio = func(pack AudioPack) {
 		var packet mpegts.MpegTsPESPacket
-		if packet, err = AudioPacketToPES(pack.Timestamp,pack.Payload, asc); err != nil {
+		if packet, err = AudioPacketToPES(pack.Timestamp, pack.Payload, asc); err != nil {
 			return
 		}
 
