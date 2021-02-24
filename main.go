@@ -41,13 +41,13 @@ func init() {
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
-				AddHook(HOOK_PUBLISH, func(v interface{}){
+				AddHook(HOOK_PUBLISH, func(v interface{}) {
 					writeHLS(v.(*Stream))
 				})
 			}
 		},
 	})
-	http.HandleFunc("/hls/list", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/hls/list", func(w http.ResponseWriter, r *http.Request) {
 		sse := NewSSE(w, r.Context())
 		var err error
 		for tick := time.NewTicker(time.Second); err == nil; <-tick.C {
@@ -59,7 +59,8 @@ func init() {
 			err = sse.WriteJSON(info)
 		}
 	})
-	http.HandleFunc("/hls/save", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/hls/save", func(w http.ResponseWriter, r *http.Request) {
+		CORS(w, r)
 		streamPath := r.URL.Query().Get("streamPath")
 		if data, ok := collection.Load(streamPath); ok {
 			hls := data.(*HLS)
@@ -67,8 +68,8 @@ func init() {
 			<-hls.SaveContext.Done()
 		}
 	})
-	http.HandleFunc("/hls/pull", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+	http.HandleFunc("/api/hls/pull", func(w http.ResponseWriter, r *http.Request) {
+		CORS(w, r)
 		targetURL := r.URL.Query().Get("target")
 		streamPath := r.URL.Query().Get("streamPath")
 		p := new(HLS)
@@ -82,7 +83,7 @@ func init() {
 		}
 	})
 	http.HandleFunc("/hls/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		CORS(w, r)
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
 			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
 				io.Copy(w, f)
