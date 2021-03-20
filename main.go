@@ -2,6 +2,7 @@ package hls
 
 import (
 	"bytes"
+	"embed"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -32,6 +33,10 @@ var config struct {
 	Path         string //存放路径
 }
 
+//go:embed ui/*
+//go:embed README.md
+var ui embed.FS
+
 func init() {
 	config.Fragment = 10
 	config.Window = 2
@@ -39,6 +44,7 @@ func init() {
 		Name:   "HLS",
 		Type:   PLUGIN_PUBLISHER | PLUGIN_HOOK,
 		Config: &config,
+		UIFile: &ui,
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
