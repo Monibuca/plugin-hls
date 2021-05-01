@@ -2,9 +2,9 @@ package hls
 
 import (
 	"bytes"
-	"embed"
 	"compress/gzip"
 	"context"
+	"embed"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -241,8 +241,15 @@ func (p *HLS) run(info *M3u8Info) {
 				}
 				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
-
-			time.Sleep(time.Second * time.Duration(playlist.Target) * 2)
+			switch len(tsItems) {
+			case 3:
+			case 2:
+				time.Sleep(time.Second)
+			case 1:
+				time.Sleep(time.Second * time.Duration(playlist.Target))
+			case 0:
+				time.Sleep(time.Second * time.Duration(playlist.Target) * 2)
+			}
 		} else {
 			log.Printf("%s readM3u8:%v", p.StreamPath, err)
 			errcount++
