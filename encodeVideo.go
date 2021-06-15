@@ -1,67 +1,33 @@
 package hls
 
 import (
-	"errors"
+	"bytes"
 	"os"
 
 	. "github.com/Monibuca/engine/v3"
-	"github.com/Monibuca/utils/v3"
 	"github.com/Monibuca/utils/v3/codec"
 	"github.com/Monibuca/utils/v3/codec/mpegts"
 )
 
-func decodeAVCDecoderConfigurationRecord(video []byte) (avc_dcr codec.AVCDecoderConfigurationRecord, err error) {
-
-	// 前面有5个字节(视频信息).
-	avc_dcr.ConfigurationVersion = video[0]
-	avc_dcr.AVCProfileIndication = video[1]
-	avc_dcr.ProfileCompatibility = video[2]
-	avc_dcr.AVCLevelIndication = video[3]
-	avc_dcr.Reserved1 = video[4] >> 2            // reserved 111111
-	avc_dcr.LengthSizeMinusOne = video[4] & 0x03 // H.264 视频中 NALU 的长度,一般为3
-	avc_dcr.Reserved2 = video[5] >> 5            // reserved 111
-
-	avc_dcr.NumOfSequenceParameterSets = video[5] & 31                     // sps个数,一般为1
-	avc_dcr.SequenceParameterSetLength = utils.BigEndian.Uint16(video[6:]) // sps长度
-
-	if len(video) < 9+int(avc_dcr.SequenceParameterSetLength)+2 {
-		err = errors.New("decodeAVCDecoderConfigurationRecord error 2")
-		return
-	}
-	avc_dcr.SequenceParameterSetNALUnit = video[8 : 8+int(avc_dcr.SequenceParameterSetLength)] // sps
-
-	avc_dcr.NumOfPictureParameterSets = video[8+int(avc_dcr.SequenceParameterSetLength)]                          // pps个数,一般为1
-	avc_dcr.PictureParameterSetLength = utils.BigEndian.Uint16(video[9+int(avc_dcr.SequenceParameterSetLength):]) // pps长度
-	avc_dcr.PictureParameterSetNALUnit = video[9+int(avc_dcr.SequenceParameterSetLength)+2:]                      // pps
-
-	return
-}
-func VideoPacketToPES(pack VideoPack, avc_dcr codec.AVCDecoderConfigurationRecord) (packet mpegts.MpegTsPESPacket, err error) {
-	var data []byte
+func VideoPacketToPES(pack VideoPack, sps, pps []byte) (packet mpegts.MpegTsPESPacket, err error) {
+	buffer := bytes.NewBuffer([]byte{})
 	ts := pack.Timestamp
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
-	
-	switch pack.NalType {
-	case codec.NALU_Non_IDR_Picture, codec.NALU_IDR_Picture, codec.NALU_SEI:
-		data = append(data, codec.NALU_AUD_BYTE...)
-	}
-	switch pack.NalType {
-	case codec.NALU_IDR_Picture:
-		if avc_dcr.SequenceParameterSetLength > 0 {
-			data = append(data, codec.NALU_Delimiter2...)
-			data = append(data, avc_dcr.SequenceParameterSetNALUnit...)
+	for _, nalu := range pack.NALUs {
+		switch nalu[0] & 0x1F {
+		case codec.NALU_Non_IDR_Picture, codec.NALU_SEI:
+			buffer.Write(codec.NALU_AUD_BYTE)
+		case codec.NALU_IDR_Picture:
+			buffer.Write(codec.NALU_AUD_BYTE)
+			buffer.Write(codec.NALU_Delimiter2)
+			buffer.Write(sps)
+			buffer.Write(codec.NALU_Delimiter2)
+			buffer.Write(pps)
 		}
-
-		if avc_dcr.PictureParameterSetLength > 0 {
-			data = append(data, codec.NALU_Delimiter2...)
-			data = append(data, avc_dcr.PictureParameterSetNALUnit...)
-		}
-		fallthrough
-	default:
-		data = append(data, codec.NALU_Delimiter1...)
-		data = append(data, pack.Payload...)
+		buffer.Write(codec.NALU_Delimiter1)
+		buffer.Write(nalu)
 	}
-	pktLength := len(data) + 10 + 3
+	pktLength := buffer.Len() + 10 + 3
 	if pktLength > 0xffff {
 		pktLength = 0
 	}
@@ -90,7 +56,7 @@ func VideoPacketToPES(pack VideoPack, avc_dcr codec.AVCDecoderConfigurationRecor
 	packet.Header.PtsDtsFlags = 0xC0
 	packet.Header.PesHeaderDataLength = 10
 
-	packet.Payload = data
+	packet.Payload = buffer.Bytes()
 
 	return
 }

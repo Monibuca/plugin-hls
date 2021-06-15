@@ -33,16 +33,12 @@ func writeHLS(r *Stream) {
 	}
 	vt := outStream.WaitVideoTrack("h264")
 	at := outStream.WaitAudioTrack("aac")
-	var avc codec.AVCDecoderConfigurationRecord
-	if vt != nil {
-		avc, err = decodeAVCDecoderConfigurationRecord(vt.RtmpTag[5:])
-	}
 	if err != nil {
 		return
 	}
 	var asc codec.AudioSpecificConfig
 	if at != nil {
-		asc, err = decodeAudioSpecificConfig(at.RtmpTag)
+		asc, err = decodeAudioSpecificConfig(at.ExtraData)
 	}
 	if err != nil {
 		return
@@ -69,11 +65,11 @@ func writeHLS(r *Stream) {
 
 	hls_segment_data := &bytes.Buffer{}
 	outStream.OnVideo = func(pack VideoPack) {
-		packet, err := VideoPacketToPES(pack, avc)
+		packet, err := VideoPacketToPES(pack, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
 		if err != nil {
 			return
 		}
-		if pack.NalType == codec.NALU_IDR_Picture {
+		if pack.IDR {
 			// 当前的时间戳减去上一个ts切片的时间戳
 			if int64(pack.Timestamp-vwrite_time) >= hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
@@ -118,7 +114,7 @@ func writeHLS(r *Stream) {
 
 		frame := new(mpegts.MpegtsPESFrame)
 		frame.Pid = 0x101
-		frame.IsKeyFrame = pack.NalType == codec.NALU_IDR_Picture
+		frame.IsKeyFrame = pack.IDR
 		frame.ContinuityCounter = byte(video_cc % 16)
 		frame.ProgramClockReferenceBase = uint64(pack.Timestamp) * 90
 		if err = mpegts.WritePESPacket(hls_segment_data, frame, packet); err != nil {
@@ -129,7 +125,7 @@ func writeHLS(r *Stream) {
 	}
 	outStream.OnAudio = func(pack AudioPack) {
 		var packet mpegts.MpegTsPESPacket
-		if packet, err = AudioPacketToPES(pack.Timestamp, pack.Payload, asc); err != nil {
+		if packet, err = AudioPacketToPES(pack.Timestamp, pack.Raw, asc); err != nil {
 			return
 		}
 
