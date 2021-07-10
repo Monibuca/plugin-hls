@@ -94,11 +94,10 @@ func init() {
 		} else if strings.HasSuffix(r.URL.Path, ".ts") {
 			tsPath := filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))
 			if config.EnableMemory {
-				if ringItem, ok := memoryTs.Load(tsPath); ok {
+				if tsData, ok := memoryTs.Load(tsPath); ok {
 					w.Write(mpegts.DefaultPATPacket)
 					w.Write(mpegts.DefaultPMTPacket)
-					ringItem.(*RingItem_Video).Wait()
-					w.Write(ringItem.(*RingItem_Video).Buffer.Bytes())
+					w.Write(tsData.([]byte))
 				} else {
 					w.WriteHeader(404)
 				}

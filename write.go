@@ -84,9 +84,8 @@ func writeHLS(r *Stream) {
 					}
 				}
 				if config.EnableMemory {
-					ring.GetBuffer().Write(tsData)
 					ring.Current.Payload = []byte(tsFilePath)
-					memoryTs.Store(tsFilePath, ring.Current)
+					memoryTs.Store(tsFilePath, tsData)
 					if ring.NextW(); len(ring.Current.Payload) > 0 {
 						memoryTs.Delete(string(ring.Current.Payload))
 					}
