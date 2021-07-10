@@ -2,6 +2,7 @@ package hls
 
 import (
 	"bytes"
+	"container/ring"
 	"log"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ func writeHLS(r *Stream) {
 	var video_cc, audio_cc uint16
 	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS"}
 
-	var ring = NewRing_Video()
+	var ring = ring.New(config.Window + 1)
 
 	if err = outStream.Subscribe(r.StreamPath); err != nil {
 		utils.Println(err)
@@ -84,10 +85,10 @@ func writeHLS(r *Stream) {
 					}
 				}
 				if config.EnableMemory {
-					ring.Current.Payload = []byte(tsFilePath)
+					ring.Value = tsFilePath
 					memoryTs.Store(tsFilePath, tsData)
-					if ring.NextW(); len(ring.Current.Payload) > 0 {
-						memoryTs.Delete(string(ring.Current.Payload))
+					if ring = ring.Next(); len(ring.Value.(string)) > 0 {
+						memoryTs.Delete(ring.Value)
 					}
 				}
 				inf := PlaylistInf{
@@ -140,8 +141,6 @@ func writeHLS(r *Stream) {
 	}
 	outStream.Play(at, vt)
 	if config.EnableMemory {
-		for i := byte(0); i <= 255; i++ {
-			memoryTs.Delete(string(ring.GetAt(i).Payload))
-		}
+		ring.Do(memoryTs.Delete)
 	}
 }

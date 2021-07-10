@@ -3,6 +3,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/Monibuca/engine/v3 v3.0.0-beta5/go.mod h1:SMgnlwih4pBA/HkTLjKXZFYkv3ukRzFjv65CARRLVIk=
 github.com/Monibuca/engine/v3 v3.1.0 h1:/U1YV6dYu4nYdLUHJgDhXzbmp1/X0Vwi8xrx1WfyVNA=
 github.com/Monibuca/engine/v3 v3.1.0/go.mod h1:yz6cssED2VlYu+g/LrxseBB9pcvsLM/o2QXa4gVY650=
+github.com/Monibuca/engine/v3 v3.1.1 h1:UZXvAsFO/5Tae6rN42Wppa+UOMxfPcy3erCpPWV+TQY=
+github.com/Monibuca/engine/v3 v3.1.1/go.mod h1:yz6cssED2VlYu+g/LrxseBB9pcvsLM/o2QXa4gVY650=
 github.com/Monibuca/plugin-ts/v3 v3.0.0-20210615000458-7578bc0b3a6e h1:dfDhzXxvma+YPLVuiB7H7znzmT7KmHenhxnGtEUDvAo=
 github.com/Monibuca/plugin-ts/v3 v3.0.0-20210615000458-7578bc0b3a6e/go.mod h1:Gr7grTm/3aJyA/XZM1ZyVQFAkrkNnuDK/fFPy318JRU=
 github.com/Monibuca/plugin-ts/v3 v3.0.0-20210710125303-3fb5757b7c5b h1:rGxDDb1Evkdzgmdqm1x5MCw6QtkGr7N6mgOBHqxZNnU=
