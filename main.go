@@ -41,9 +41,7 @@ func init() {
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
-				AddHook(HOOK_PUBLISH, func(v interface{}) {
-					writeHLS(v.(*Stream))
-				})
+				AddHook(HOOK_PUBLISH, writeHLS)
 			}
 		},
 	})
