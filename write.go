@@ -87,7 +87,7 @@ func writeHLS(r *Stream) {
 				if config.EnableMemory {
 					ring.Value = tsFilePath
 					memoryTs.Store(tsFilePath, tsData)
-					if ring = ring.Next(); len(ring.Value.(string)) > 0 {
+					if ring = ring.Next(); ring.Value != nil && len(ring.Value.(string)) > 0 {
 						memoryTs.Delete(ring.Value)
 					}
 				}
