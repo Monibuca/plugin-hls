@@ -4,16 +4,14 @@ import (
 	"bytes"
 	"os"
 
-	. "github.com/Monibuca/engine/v3"
 	"github.com/Monibuca/utils/v3/codec"
 	"github.com/Monibuca/utils/v3/codec/mpegts"
 )
 
-func VideoPacketToPES(pack VideoPack, sps, pps []byte) (packet mpegts.MpegTsPESPacket, err error) {
+func VideoPacketToPES(ts uint32,nalus [][]byte, sps, pps []byte) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
-	ts := pack.Timestamp
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
-	for _, nalu := range pack.NALUs {
+	for _, nalu := range nalus {
 		switch nalu[0] & 0x1F {
 		case codec.NALU_Non_IDR_Picture, codec.NALU_SEI:
 			buffer.Write(codec.NALU_AUD_BYTE)

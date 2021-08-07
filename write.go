@@ -65,14 +65,14 @@ func writeHLS(r *Stream) {
 	}
 
 	hls_segment_data := &bytes.Buffer{}
-	outStream.OnVideo = func(pack VideoPack) {
-		packet, err := VideoPacketToPES(pack, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
+	outStream.OnVideo = func(ts uint32, pack *VideoPack) {
+		packet, err := VideoPacketToPES(ts, pack.NALUs, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
 		if err != nil {
 			return
 		}
 		if pack.IDR {
 			// 当前的时间戳减去上一个ts切片的时间戳
-			if int64(pack.Timestamp-vwrite_time) >= hls_fragment {
+			if int64(ts-vwrite_time) >= hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
@@ -92,7 +92,7 @@ func writeHLS(r *Stream) {
 					}
 				}
 				inf := PlaylistInf{
-					Duration: float64((pack.Timestamp - vwrite_time) / 1000),
+					Duration: float64((ts - vwrite_time) / 1000),
 					Title:    filepath.Base(hls_path) + "/" + tsFilename,
 				}
 
@@ -107,7 +107,7 @@ func writeHLS(r *Stream) {
 				}
 
 				hls_segment_count++
-				vwrite_time = pack.Timestamp
+				vwrite_time = ts
 				hls_segment_data.Reset()
 			}
 		}
@@ -116,16 +116,16 @@ func writeHLS(r *Stream) {
 		frame.Pid = 0x101
 		frame.IsKeyFrame = pack.IDR
 		frame.ContinuityCounter = byte(video_cc % 16)
-		frame.ProgramClockReferenceBase = uint64(pack.Timestamp) * 90
+		frame.ProgramClockReferenceBase = uint64(ts) * 90
 		if err = mpegts.WritePESPacket(hls_segment_data, frame, packet); err != nil {
 			return
 		}
 
 		video_cc = uint16(frame.ContinuityCounter)
 	}
-	outStream.OnAudio = func(pack AudioPack) {
+	outStream.OnAudio = func(ts uint32,pack *AudioPack) {
 		var packet mpegts.MpegTsPESPacket
-		if packet, err = AudioPacketToPES(pack.Timestamp, pack.Raw, asc); err != nil {
+		if packet, err = AudioPacketToPES(ts, pack.Raw, asc); err != nil {
 			return
 		}
 
