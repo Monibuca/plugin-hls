@@ -87,7 +87,7 @@ func writeHLS(r *Stream) {
 				if config.EnableMemory {
 					ring.Value = tsFilePath
 					memoryTs.Store(tsFilePath, tsData)
-					if ring = ring.Next(); len(ring.Value.(string)) > 0 {
+					if ring = ring.Next(); ring.Value != nil && len(ring.Value.(string)) > 0 {
 						memoryTs.Delete(ring.Value)
 					}
 				}
@@ -123,7 +123,7 @@ func writeHLS(r *Stream) {
 
 		video_cc = uint16(frame.ContinuityCounter)
 	}
-	outStream.OnAudio = func(ts uint32,pack *AudioPack) {
+	outStream.OnAudio = func(ts uint32, pack *AudioPack) {
 		var packet mpegts.MpegTsPESPacket
 		if packet, err = AudioPacketToPES(ts, pack.Raw, asc); err != nil {
 			return
