@@ -46,6 +46,7 @@ func init() {
 		},
 	})
 	http.HandleFunc("/api/hls/list", func(w http.ResponseWriter, r *http.Request) {
+		CORS(w, r)
 		sse := NewSSE(w, r.Context())
 		var err error
 		for tick := time.NewTicker(time.Second); err == nil; <-tick.C {
