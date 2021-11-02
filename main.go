@@ -154,7 +154,7 @@ func (p *HLS) run(info *M3u8Info) {
 	//请求失败自动退出
 	req := info.Req.WithContext(p)
 	client := http.Client{Timeout: time.Second * 5}
-	sequence := 0
+	sequence := -1
 	lastTs := make(map[string]bool)
 	resp, err := client.Do(req)
 	defer func() {
