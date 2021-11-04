@@ -92,7 +92,8 @@ func writeHLS(r *Stream) {
 					}
 				}
 				inf := PlaylistInf{
-					Duration: float64((ts - vwrite_time) / 1000),
+					//浮点计算精度
+					Duration: float64((ts - vwrite_time) / 1000.0),
 					Title:    filepath.Base(hls_path) + "/" + tsFilename,
 				}
 
