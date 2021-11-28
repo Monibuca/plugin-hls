@@ -41,7 +41,7 @@ func init() {
 		Run: func() {
 			//os.MkdirAll(config.Path, 0666)
 			if config.EnableWrite || config.EnableMemory {
-				AddHook(HOOK_PUBLISH, writeHLS)
+				AddHookGo(HOOK_PUBLISH, writeHLS)
 			}
 		},
 	})
