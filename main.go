@@ -85,12 +85,14 @@ func init() {
 		CORS(w, r)
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
 			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
+				w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")//audio/x-mpegurl
 				io.Copy(w, f)
 				err = f.Close()
 			} else {
 				w.WriteHeader(404)
 			}
 		} else if strings.HasSuffix(r.URL.Path, ".ts") {
+			w.Header().Add("Content-Type", "video/mp2t")//video/mp2t
 			tsPath := filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))
 			if config.EnableMemory {
 				if tsData, ok := memoryTs.Load(tsPath); ok {
