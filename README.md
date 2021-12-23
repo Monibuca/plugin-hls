@@ -25,9 +25,12 @@ EnableMemory = false
 Fragment = 5
 Window = 2
 Path = "hls"
+[[AutoPullList]]
+"live/hls" = "http://localhost/abc.m3u8"
 ```
 EnableWrite 用来控制是否启用HLS文件写入功能
 EnableMemory 用来启用内存播放模式，开启后ts数据会保存在内存中
+AutoPullList 自动拉流配置，可以指定多个流，每个流的key是streamPath，value是目标地址
 
 - 如果同时开启写入和内存模式的话，从gateway读取的ts会优先使用内存。
 # 使用方法
