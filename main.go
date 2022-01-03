@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Monibuca/utils/v3"
 	"github.com/Monibuca/utils/v3/codec/mpegts"
 
 	. "github.com/Monibuca/engine/v3"
@@ -32,20 +33,21 @@ var config struct {
 	Path         string //存放路径
 	AutoPullList map[string]string
 }
+var pconfig = PluginConfig{
+	Name:   "HLS",
+	Config: &config,
+}
 
 func init() {
 	config.Fragment = 10
 	config.Window = 2
-	InstallPlugin(&PluginConfig{
-		Name:   "HLS",
-		Config: &config,
-		Run: func() {
-			//os.MkdirAll(config.Path, 0666)
-			if config.EnableWrite || config.EnableMemory {
-				AddHookGo(HOOK_PUBLISH, writeHLS)
-			}
-		},
+	pconfig.Install(func() {
+		//os.MkdirAll(config.Path, 0666)
+		if config.EnableWrite || config.EnableMemory {
+			AddHookGo(HOOK_PUBLISH, writeHLS)
+		}
 	})
+
 	http.HandleFunc("/api/hls/list", func(w http.ResponseWriter, r *http.Request) {
 		CORS(w, r)
 		sse := NewSSE(w, r.Context())
@@ -79,12 +81,25 @@ func init() {
 		CORS(w, r)
 		targetURL := r.URL.Query().Get("target")
 		streamPath := r.URL.Query().Get("streamPath")
+		save := r.URL.Query().Get("save")
 		p := new(HLS)
 		var err error
 		p.Video.Req, err = http.NewRequest("GET", targetURL, nil)
 		if err == nil {
-			p.Publish(streamPath)
-			w.Write([]byte(`{"code":0}`))
+			if p.Publish(streamPath) {
+				if save == "1" {
+					if config.AutoPullList == nil {
+						config.AutoPullList = make(map[string]string)
+					}
+					config.AutoPullList[streamPath] = targetURL
+					if err = pconfig.Save(); err != nil {
+						utils.Println(err)
+					}
+				}
+				w.Write([]byte(`{"code":0}`))
+			} else {
+				w.Write([]byte(`{"code":2,"msg":"bad name"}`))
+			}
 		} else {
 			w.Write([]byte(fmt.Sprintf(`{"code":1,"msg":"%s"}`, err.Error())))
 		}
