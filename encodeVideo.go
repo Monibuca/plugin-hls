@@ -8,7 +8,7 @@ import (
 	"github.com/Monibuca/utils/v3/codec/mpegts"
 )
 
-func VideoPacketToPES(ts uint32,nalus [][]byte, sps, pps []byte) (packet mpegts.MpegTsPESPacket, err error) {
+func VideoPacketToPES(pts,dts uint32,nalus [][]byte, sps, pps []byte) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
 	for _, nalu := range nalus {
@@ -31,7 +31,6 @@ func VideoPacketToPES(ts uint32,nalus [][]byte, sps, pps []byte) (packet mpegts.
 	}
 
 	// cts = (pts - dts) / 90
-	var cts uint32
 	// var avcPktType uint32
 	// if avcPktType, err = utils.ByteToUint32N(payload[1:2]); err != nil {
 	// 	return
@@ -49,8 +48,8 @@ func VideoPacketToPES(ts uint32,nalus [][]byte, sps, pps []byte) (packet mpegts.
 	packet.Header.ConstTen = 0x80
 	packet.Header.StreamID = mpegts.STREAM_ID_VIDEO
 	packet.Header.PesPacketLength = uint16(pktLength)
-	packet.Header.Pts = uint64(ts+cts) * 90
-	packet.Header.Dts = uint64(ts) * 90
+	packet.Header.Pts = uint64(pts) * 90
+	packet.Header.Dts = uint64(dts) * 90
 	packet.Header.PtsDtsFlags = 0xC0
 	packet.Header.PesHeaderDataLength = 10
 

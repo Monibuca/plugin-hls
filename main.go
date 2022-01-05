@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ var config struct {
 	Window       int
 	EnableWrite  bool   //启动HLS写文件
 	EnableMemory bool   // 启动内存模式
+	Filter       string // 过滤，正则表达式
 	Path         string //存放路径
 	AutoPullList map[string]string
 }
@@ -37,6 +39,7 @@ var pconfig = PluginConfig{
 	Name:   "HLS",
 	Config: &config,
 }
+var filterReg *regexp.Regexp
 
 func init() {
 	config.Fragment = 10
@@ -45,6 +48,9 @@ func init() {
 		//os.MkdirAll(config.Path, 0666)
 		if config.EnableWrite || config.EnableMemory {
 			AddHookGo(HOOK_PUBLISH, writeHLS)
+		}
+		if config.Filter != "" {
+			filterReg = regexp.MustCompile(config.Filter)
 		}
 	})
 
@@ -106,17 +112,22 @@ func init() {
 	})
 	http.HandleFunc("/hls/", func(w http.ResponseWriter, r *http.Request) {
 		CORS(w, r)
+		fileName := strings.TrimPrefix(r.URL.Path, "/hls/")
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
-			if f, err := os.Open(filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))); err == nil {
+			if f, err := os.Open(filepath.Join(config.Path, fileName)); err == nil {
 				w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
 				io.Copy(w, f)
 				err = f.Close()
+			} else if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
+				w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
+				buffer := v.(*bytes.Buffer)
+				w.Write(buffer.Bytes())
 			} else {
 				w.WriteHeader(404)
 			}
 		} else if strings.HasSuffix(r.URL.Path, ".ts") {
 			w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
-			tsPath := filepath.Join(config.Path, strings.TrimPrefix(r.URL.Path, "/hls/"))
+			tsPath := filepath.Join(config.Path, fileName)
 			if config.EnableMemory {
 				if tsData, ok := memoryTs.Load(tsPath); ok {
 					w.Write(mpegts.DefaultPATPacket)

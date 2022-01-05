@@ -3,7 +3,7 @@ package hls
 import (
 	"bytes"
 	"container/ring"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,16 +17,23 @@ import (
 )
 
 var memoryTs sync.Map
+var memoryM3u8 sync.Map
 
 func writeHLS(r *Stream) {
+	if filterReg != nil && !filterReg.MatchString(r.StreamPath) {
+		return
+	}
+	var m3u8Buffer bytes.Buffer
+	var infoRing = ring.New(config.Window)
+
+	memoryM3u8.Store(r.StreamPath, &m3u8Buffer)
+	defer memoryM3u8.Delete(r.StreamPath)
 	var err error
 	var hls_fragment int64       // hls fragment
 	var hls_segment_count uint32 // hls segment count
 	var vwrite_time uint32
 	var video_cc, audio_cc uint16
 	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS"}
-
-	var ring = ring.New(config.Window + 1)
 
 	if err = outStream.Subscribe(r.StreamPath); err != nil {
 		utils.Println(err)
@@ -51,22 +58,34 @@ func writeHLS(r *Stream) {
 	}
 
 	hls_playlist := Playlist{
+		Writer:         &m3u8Buffer,
 		Version:        3,
 		Sequence:       0,
 		Targetduration: int(hls_fragment / 666), // hlsFragment * 1.5 / 1000
 	}
-
-	hls_path := filepath.Join(config.Path, r.StreamPath)
-	hls_m3u8_name := hls_path + ".m3u8"
-	os.MkdirAll(hls_path, 0755)
-	if err = hls_playlist.Init(hls_m3u8_name); err != nil {
-		log.Println(err)
+	hls_path := filepath.Join(config.Path, r.StreamPath, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
+	os.MkdirAll(filepath.Dir(hls_path), 0755)
+	var file *os.File
+	file, err = os.OpenFile(hls_path, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
 		return
 	}
-
+	defer file.Close()
+	record_playlist := Playlist{
+		Writer:         file,
+		Version:        3,
+		Sequence:       0,
+		Targetduration: int(hls_fragment / 666), // hlsFragment * 1.5 / 1000
+	}
+	if err = hls_playlist.Init(); err != nil {
+		return
+	}
+	if err = record_playlist.Init(); err != nil {
+		return
+	}
 	hls_segment_data := &bytes.Buffer{}
 	outStream.OnVideo = func(ts uint32, pack *VideoPack) {
-		packet, err := VideoPacketToPES(ts, pack.NALUs, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
+		packet, err := VideoPacketToPES(ts+pack.CompositionTime, ts, pack.NALUs, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
 		if err != nil {
 			return
 		}
@@ -78,35 +97,43 @@ func writeHLS(r *Stream) {
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 
 				tsData := hls_segment_data.Bytes()
-				tsFilePath := filepath.Join(hls_path, tsFilename)
+				tsFilePath := filepath.Join(filepath.Dir(hls_path), tsFilename)
 				if config.EnableWrite {
 					if err = writeHlsTsSegmentFile(tsFilePath, tsData); err != nil {
 						return
 					}
 				}
 				if config.EnableMemory {
-					ring.Value = tsFilePath
 					memoryTs.Store(tsFilePath, tsData)
-					if ring = ring.Next(); ring.Value != nil && len(ring.Value.(string)) > 0 {
-						memoryTs.Delete(ring.Value)
-					}
 				}
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - vwrite_time) / 1000.0),
-					Title:    filepath.Base(hls_path) + "/" + tsFilename,
+					Title:    filepath.Base(filepath.Dir(hls_path)) + "/" + tsFilename,
+					FilePath: tsFilePath,
 				}
 
 				if hls_segment_count >= uint32(config.Window) {
-					if err = hls_playlist.UpdateInf(hls_m3u8_name, hls_m3u8_name+".tmp", inf); err != nil {
+					m3u8Buffer.Reset()
+					if err = hls_playlist.Init(); err != nil {
 						return
 					}
+					memoryTs.Delete(infoRing.Value.(*PlaylistInf).FilePath)
+					infoRing.Value = &inf
+					infoRing = infoRing.Next()
+					infoRing.Do(func(i interface{}) {
+						hls_playlist.WriteInf(*i.(*PlaylistInf))
+					})
 				} else {
-					if err = hls_playlist.WriteInf(hls_m3u8_name, inf); err != nil {
+					infoRing.Value = &inf
+					infoRing = infoRing.Next()
+					if err = hls_playlist.WriteInf(inf); err != nil {
 						return
 					}
 				}
-
+				if err = record_playlist.WriteInf(inf); err != nil {
+					return
+				}
 				hls_segment_count++
 				vwrite_time = ts
 				hls_segment_data.Reset()
@@ -141,7 +168,10 @@ func writeHLS(r *Stream) {
 		audio_cc = uint16(frame.ContinuityCounter)
 	}
 	outStream.Play(at, vt)
+
 	if config.EnableMemory {
-		ring.Do(memoryTs.Delete)
+		infoRing.Do(func(i interface{}) {
+			memoryTs.Delete(i.(*PlaylistInf).FilePath)
+		})
 	}
 }
