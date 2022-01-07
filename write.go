@@ -85,7 +85,7 @@ func writeHLS(r *Stream) {
 	}
 	hls_segment_data := &bytes.Buffer{}
 	outStream.OnVideo = func(ts uint32, pack *VideoPack) {
-		packet, err := VideoPacketToPES(ts+pack.CompositionTime, ts, pack.NALUs, vt.ExtraData.NALUs[0], vt.ExtraData.NALUs[1])
+		packet, err := VideoPacketToPES(ts , pack , vt.ExtraData.NALUs)
 		if err != nil {
 			return
 		}
@@ -172,7 +172,9 @@ func writeHLS(r *Stream) {
 
 	if config.EnableMemory {
 		infoRing.Do(func(i interface{}) {
-			memoryTs.Delete(i.(PlaylistInf).FilePath)
+			if i != nil {
+				memoryTs.Delete(i.(PlaylistInf).FilePath)
+			}
 		})
 	}
 }
