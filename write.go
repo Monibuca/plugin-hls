@@ -118,19 +118,20 @@ func writeHLS(r *Stream) {
 					if err = hls_playlist.Init(); err != nil {
 						return
 					}
-					memoryTs.Delete(infoRing.Value.(*PlaylistInf).FilePath)
-					infoRing.Value = &inf
+					memoryTs.Delete(infoRing.Value.(PlaylistInf).FilePath)
+					infoRing.Value = inf
 					infoRing = infoRing.Next()
 					infoRing.Do(func(i interface{}) {
-						hls_playlist.WriteInf(*i.(*PlaylistInf))
+						hls_playlist.WriteInf(i.(PlaylistInf))
 					})
 				} else {
-					infoRing.Value = &inf
+					infoRing.Value = inf
 					infoRing = infoRing.Next()
 					if err = hls_playlist.WriteInf(inf); err != nil {
 						return
 					}
 				}
+				inf.Title = tsFilename
 				if err = record_playlist.WriteInf(inf); err != nil {
 					return
 				}
@@ -171,7 +172,7 @@ func writeHLS(r *Stream) {
 
 	if config.EnableMemory {
 		infoRing.Do(func(i interface{}) {
-			memoryTs.Delete(i.(*PlaylistInf).FilePath)
+			memoryTs.Delete(i.(PlaylistInf).FilePath)
 		})
 	}
 }
