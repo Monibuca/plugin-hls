@@ -114,16 +114,22 @@ func init() {
 		CORS(w, r)
 		fileName := strings.TrimPrefix(r.URL.Path, "/hls/")
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
-			if f, err := os.Open(filepath.Join(config.Path, fileName)); err == nil {
-				w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
-				io.Copy(w, f)
-				err = f.Close()
-			} else if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
-				w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
-				buffer := v.(*bytes.Buffer)
-				w.Write(buffer.Bytes())
+			if config.EnableMemory {
+				if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
+					w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
+					buffer := v.(*bytes.Buffer)
+					w.Write(buffer.Bytes())
+				} else {
+					w.WriteHeader(404)
+				}
 			} else {
-				w.WriteHeader(404)
+				if f, err := os.Open(filepath.Join(config.Path, fileName)); err == nil {
+					w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
+					io.Copy(w, f)
+					err = f.Close()
+				} else {
+					w.WriteHeader(404)
+				}
 			}
 		} else if strings.HasSuffix(r.URL.Path, ".ts") {
 			w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
