@@ -10,24 +10,23 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/Monibuca/engine/v3"
-	"github.com/Monibuca/utils/v3"
-	"github.com/Monibuca/utils/v3/codec"
-	"github.com/Monibuca/utils/v3/codec/mpegts"
+	. "github.com/Monibuca/engine/v4"
+	"github.com/Monibuca/engine/v4/codec"
+	"github.com/Monibuca/engine/v4/codec/mpegts"
 )
 
 var memoryTs sync.Map
 var memoryM3u8 sync.Map
 
-func writeHLS(r *Stream) {
-	if filterReg != nil && !filterReg.MatchString(r.StreamPath) {
+func (config *HLSConfig) writeHLS(r *Stream) {
+	if config.filterReg != nil && !config.filterReg.MatchString(r.Path) {
 		return
 	}
 	var m3u8Buffer bytes.Buffer
 	var infoRing = ring.New(config.Window)
 
-	memoryM3u8.Store(r.StreamPath, &m3u8Buffer)
-	defer memoryM3u8.Delete(r.StreamPath)
+	memoryM3u8.Store(r.Path, &m3u8Buffer)
+	defer memoryM3u8.Delete(r.Path)
 	var err error
 	var hls_fragment int64       // hls fragment
 	var hls_segment_count uint32 // hls segment count
@@ -35,18 +34,15 @@ func writeHLS(r *Stream) {
 	var video_cc, audio_cc uint16
 	var outStream = Subscriber{ID: "HLSWriter", Type: "HLS"}
 
-	if err = outStream.Subscribe(r.StreamPath); err != nil {
-		utils.Println(err)
+	if !outStream.Subscribe(r.Path, hlsConfig.Subscribe) {
 		return
 	}
 	vt := outStream.WaitVideoTrack("h264")
 	at := outStream.WaitAudioTrack("aac")
-	if err != nil {
-		return
-	}
+
 	var asc codec.AudioSpecificConfig
 	if at != nil {
-		asc, err = decodeAudioSpecificConfig(at.ExtraData)
+		asc, err = decodeAudioSpecificConfig([]byte(at.DecoderConfiguration.AVCC))
 	}
 	if err != nil {
 		return
@@ -63,7 +59,7 @@ func writeHLS(r *Stream) {
 		Sequence:       0,
 		Targetduration: int(hls_fragment / 666), // hlsFragment * 1.5 / 1000
 	}
-	hls_path := filepath.Join(config.Path, r.StreamPath, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
+	hls_path := filepath.Join(config.Path, r.Path, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
 	os.MkdirAll(filepath.Dir(hls_path), 0755)
 	var file *os.File
 	file, err = os.OpenFile(hls_path, os.O_WRONLY|os.O_CREATE, 0644)
@@ -84,12 +80,14 @@ func writeHLS(r *Stream) {
 		return
 	}
 	hls_segment_data := &bytes.Buffer{}
-	outStream.OnVideo = func(ts uint32, pack *VideoPack) {
-		packet, err := VideoPacketToPES(ts , pack , vt.ExtraData.NALUs)
+	var packet mpegts.MpegTsPESPacket
+	outStream.OnVideo = func(frame *VideoFrame) (err error) {
+		packet, err = VideoPacketToPES(frame, vt.DecoderConfiguration)
 		if err != nil {
-			return
+			return err
 		}
-		if pack.IDR {
+		ts := frame.DTS / 90
+		if frame.IFrame {
 			// 当前的时间戳减去上一个ts切片的时间戳
 			if int64(ts-vwrite_time) >= hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
@@ -100,7 +98,7 @@ func writeHLS(r *Stream) {
 				tsFilePath := filepath.Join(filepath.Dir(hls_path), tsFilename)
 				if config.EnableWrite {
 					if err = writeHlsTsSegmentFile(tsFilePath, tsData); err != nil {
-						return
+						return err
 					}
 				}
 				if config.EnableMemory {
@@ -116,7 +114,7 @@ func writeHLS(r *Stream) {
 				if hls_segment_count >= uint32(config.Window) {
 					m3u8Buffer.Reset()
 					if err = hls_playlist.Init(); err != nil {
-						return
+						return err
 					}
 					memoryTs.Delete(infoRing.Value.(PlaylistInf).FilePath)
 					infoRing.Value = inf
@@ -128,12 +126,12 @@ func writeHLS(r *Stream) {
 					infoRing.Value = inf
 					infoRing = infoRing.Next()
 					if err = hls_playlist.WriteInf(inf); err != nil {
-						return
+						return err
 					}
 				}
 				inf.Title = tsFilename
 				if err = record_playlist.WriteInf(inf); err != nil {
-					return
+					return err
 				}
 				hls_segment_count++
 				vwrite_time = ts
@@ -141,35 +139,36 @@ func writeHLS(r *Stream) {
 			}
 		}
 
-		frame := new(mpegts.MpegtsPESFrame)
-		frame.Pid = 0x101
-		frame.IsKeyFrame = pack.IDR
-		frame.ContinuityCounter = byte(video_cc % 16)
-		frame.ProgramClockReferenceBase = uint64(ts) * 90
-		if err = mpegts.WritePESPacket(hls_segment_data, frame, packet); err != nil {
-			return
+		pes := &mpegts.MpegtsPESFrame{
+			Pid:                       0x101,
+			IsKeyFrame:                frame.IFrame,
+			ContinuityCounter:         byte(video_cc % 16),
+			ProgramClockReferenceBase: uint64(frame.DTS),
 		}
-
-		video_cc = uint16(frame.ContinuityCounter)
+		if err = mpegts.WritePESPacket(hls_segment_data, pes, packet); err != nil {
+			return err
+		}
+		video_cc = uint16(pes.ContinuityCounter)
+		return nil
 	}
-	outStream.OnAudio = func(ts uint32, pack *AudioPack) {
-		var packet mpegts.MpegTsPESPacket
-		if packet, err = AudioPacketToPES(ts, pack.Raw, asc); err != nil {
+	outStream.OnAudio = func(frame *AudioFrame) (err error) {
+		if packet, err = AudioPacketToPES(frame, asc); err != nil {
 			return
 		}
-
-		frame := new(mpegts.MpegtsPESFrame)
-		frame.Pid = 0x102
-		frame.IsKeyFrame = false
-		frame.ContinuityCounter = byte(audio_cc % 16)
+		pes := &mpegts.MpegtsPESFrame{
+			Pid:                       0x102,
+			IsKeyFrame:                false,
+			ContinuityCounter:         byte(audio_cc % 16),
+			ProgramClockReferenceBase: uint64(frame.DTS),
+		}
 		//frame.ProgramClockReferenceBase = 0
-		if err = mpegts.WritePESPacket(hls_segment_data, frame, packet); err != nil {
+		if err = mpegts.WritePESPacket(hls_segment_data, pes, packet); err != nil {
 			return
 		}
-		audio_cc = uint16(frame.ContinuityCounter)
+		audio_cc = uint16(pes.ContinuityCounter)
+		return
 	}
 	outStream.Play(at, vt)
-
 	if config.EnableMemory {
 		infoRing.Do(func(i interface{}) {
 			if i != nil {

@@ -3,8 +3,9 @@ package hls
 import (
 	"errors"
 
-	"github.com/Monibuca/utils/v3/codec"
-	"github.com/Monibuca/utils/v3/codec/mpegts"
+	. "github.com/Monibuca/engine/v4"
+	"github.com/Monibuca/engine/v4/codec"
+	"github.com/Monibuca/engine/v4/codec/mpegts"
 )
 
 func AudioPacketToPESPreprocess(aacRaw []byte, aac_asc codec.AudioSpecificConfig) (data []byte, err error) {
@@ -18,10 +19,12 @@ func AudioPacketToPESPreprocess(aacRaw []byte, aac_asc codec.AudioSpecificConfig
 	return
 }
 
-func AudioPacketToPES(ts uint32 ,payload []byte, aac_asc codec.AudioSpecificConfig) (packet mpegts.MpegTsPESPacket, err error) {
+func AudioPacketToPES(frame *AudioFrame, aac_asc codec.AudioSpecificConfig) (packet mpegts.MpegTsPESPacket, err error) {
 	var data []byte
-
-	if data, err = AudioPacketToPESPreprocess(payload, aac_asc); err != nil {
+	for _, b := range frame.Raw {
+		data = append(data, b...)
+	}
+	if data, err = AudioPacketToPESPreprocess(data, aac_asc); err != nil {
 		return
 	}
 
@@ -32,7 +35,7 @@ func AudioPacketToPES(ts uint32 ,payload []byte, aac_asc codec.AudioSpecificConf
 	packet.Header.ConstTen = 0x80
 	packet.Header.StreamID = mpegts.STREAM_ID_AUDIO
 	packet.Header.PesPacketLength = uint16(pktLength)
-	packet.Header.Pts = uint64(ts) * 90
+	packet.Header.Pts = uint64(frame.PTS)
 	packet.Header.PtsDtsFlags = 0x80
 	packet.Header.PesHeaderDataLength = 5
 

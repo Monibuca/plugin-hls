@@ -3,9 +3,7 @@ package hls
 import (
 	"fmt"
 	"io"
-	"strings"
 
-	"github.com/Monibuca/utils/v3"
 )
 
 const (
@@ -73,20 +71,3 @@ func (pl *Playlist) WriteInf(inf PlaylistInf) (err error) {
 	_, err = pl.Write([]byte(ss))
 	return
 }
-
-func (pl *Playlist) GetInfCount(filename string) (num int, err error) {
-	var ls []string
-	if ls, err = utils.ReadFileLines(filename); err != nil {
-		return
-	}
-
-	num = 0
-	for _, v := range ls {
-		if strings.Contains(v, "#EXTINF") {
-			num++
-		}
-	}
-
-	return
-}
-

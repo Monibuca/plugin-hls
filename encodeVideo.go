@@ -2,27 +2,28 @@ package hls
 
 import (
 	"bytes"
+	"net"
 	"os"
-
-	. "github.com/Monibuca/engine/v3"
-	"github.com/Monibuca/utils/v3/codec"
-	"github.com/Monibuca/utils/v3/codec/mpegts"
+"github.com/Monibuca/engine/v4/codec"
+	"github.com/Monibuca/engine/v4/codec/mpegts"
+	. "github.com/Monibuca/engine/v4"
+	. "github.com/Monibuca/engine/v4/common"
 )
 
-func VideoPacketToPES(dts uint32, pack *VideoPack, extra [][]byte) (packet mpegts.MpegTsPESPacket, err error) {
-	pts := dts + pack.CompositionTime
+func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice]) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
 	buffer.Write(codec.NALU_AUD_BYTE)
-	if pack.IDR {
-		for _, nalu := range extra {
+	if frame.IFrame {
+		for _, nalu := range dc.Raw {
 			buffer.Write(codec.NALU_Delimiter2)
 			buffer.Write(nalu)
 		}
 	}
-	for _, nalu := range pack.NALUs {
+	for _, nalu := range frame.Raw {
 		buffer.Write(codec.NALU_Delimiter1)
-		buffer.Write(nalu)
+		b:=net.Buffers(nalu)
+		b.WriteTo(buffer)
 	}
 	pktLength := buffer.Len() + 10 + 3
 	if pktLength > 0xffff {
@@ -47,8 +48,8 @@ func VideoPacketToPES(dts uint32, pack *VideoPack, extra [][]byte) (packet mpegt
 	packet.Header.ConstTen = 0x80
 	packet.Header.StreamID = mpegts.STREAM_ID_VIDEO
 	packet.Header.PesPacketLength = uint16(pktLength)
-	packet.Header.Pts = uint64(pts) * 90
-	packet.Header.Dts = uint64(dts) * 90
+	packet.Header.Pts = uint64(frame.PTS)
+	packet.Header.Dts = uint64(frame.DTS)
 	packet.Header.PtsDtsFlags = 0xC0
 	packet.Header.PesHeaderDataLength = 10
 
