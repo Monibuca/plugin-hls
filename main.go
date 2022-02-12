@@ -90,10 +90,10 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if save == "1" {
-			config.AddPull(streamPath,targetURL)
+			config.AddPull(streamPath, targetURL)
 			plugin.Modified["pull"] = config.Pull
 			if err = plugin.Save(); err != nil {
-				plugin.Errorln(err)
+				plugin.Error(err)
 			}
 		}
 		w.Write([]byte(`{"code":0}`))
@@ -173,7 +173,7 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 		playlist, err = m3u8.Read(reader)
 	}
 	if err != nil {
-		plugin.Errorln("readM3U8 error:%s", err.Error())
+		plugin.Error("readM3U8 error:%s", err.Error())
 	}
 	return
 }
@@ -245,17 +245,17 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 						p.TSPuller.Pull()
 						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
 					} else if err != nil {
-						plugin.Errorln("%s readTs:%v", p.Path, err)
+						plugin.Error("%s readTs:%v", p.Path, err)
 					}
 				} else if err != nil {
-					plugin.Errorln("%s reqTs:%v", p.Path, err)
+					plugin.Error("%s reqTs:%v", p.Path, err)
 				}
 				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
 
 			time.Sleep(time.Second * time.Duration(playlist.Target) * 2)
 		} else {
-			plugin.Errorln("%s readM3u8:%v", p.Path, err)
+			plugin.Error("%s readM3u8:%v", p.Path, err)
 			errcount++
 			if errcount > 10 {
 				return
