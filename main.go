@@ -90,10 +90,8 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if save == "1" {
-			if config.AutoPullList == nil {
-				config.AutoPullList = make(map[string]string)
-			}
-			config.AutoPullList[streamPath] = targetURL
+			config.AddPull(streamPath,targetURL)
+			plugin.Modified["pull"] = config.Pull
 			if err = plugin.Save(); err != nil {
 				plugin.Errorln(err)
 			}
