@@ -139,6 +139,8 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var plugin = InstallPlugin(hlsConfig)
 
+var _ IPuller = (*HLSPuller)(nil)
+
 // HLSPuller HLS拉流者
 type HLSPuller struct {
 	TSPuller
