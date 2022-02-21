@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -21,6 +20,7 @@ import (
 	"github.com/Monibuca/engine/v4/util"
 	. "github.com/Monibuca/plugin-ts/v4"
 	"github.com/quangngotan95/go-m3u8/m3u8"
+	"go.uber.org/zap"
 )
 
 type HLSConfig struct {
@@ -36,24 +36,24 @@ type HLSConfig struct {
 	filterReg    *regexp.Regexp
 }
 
-func (config *HLSConfig) Update(override config.Config) {
-	if config.Filter != "" {
-		config.filterReg = regexp.MustCompile(config.Filter)
+func (c *HLSConfig) OnEvent(event any) {
+	switch v := event.(type) {
+	case config.Config:
+		if c.Filter != "" {
+			c.filterReg = regexp.MustCompile(c.Filter)
+		}
+	case SEpublish:
+		if c.EnableWrite || c.EnableMemory {
+			go c.writeHLS(v.Stream)
+		}
+	case Puller:
+		p := &HLSPuller{}
+		p.Puller = v
+		var err error
+		if p.Video.Req, err = http.NewRequest("GET", v.RemoteURL, nil); err == nil {
+			plugin.Publish(v.RemoteURL, p)
+		}
 	}
-	Bus.Unsubscribe(Event_PUBLISH, config.writeHLS)
-	if config.EnableWrite || config.EnableMemory {
-		Bus.SubscribeAsync(Event_PUBLISH, config.writeHLS, false)
-	}
-}
-
-func (config *HLSConfig) PullStream(streamPath string, puller Puller) bool {
-	p := &HLSPuller{}
-	p.Puller = puller
-	var err error
-	if p.Video.Req, err = http.NewRequest("GET", puller.RemoteURL, nil); err == nil {
-		return p.Publish(streamPath, p, config.Publish)
-	}
-	return false
 }
 
 var hlsConfig = &HLSConfig{
@@ -81,25 +81,18 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("target")
 	streamPath := r.URL.Query().Get("streamPath")
 	save := r.URL.Query().Get("save")
-	p := new(HLSPuller)
-	var err error
-	p.Video.Req, err = http.NewRequest("GET", targetURL, nil)
-	if err == nil {
-		if !p.Publish(streamPath, p, config.Publish) {
-			w.Write([]byte(`{"code":2,"msg":"bad name"}`))
-			return
-		}
-		if save == "1" {
-			config.AddPull(streamPath, targetURL)
-			plugin.Modified["pull"] = config.Pull
-			if err = plugin.Save(); err != nil {
-				plugin.Error(err)
-			}
-		}
-		w.Write([]byte(`{"code":0}`))
-	} else {
-		w.Write([]byte(fmt.Sprintf(`{"code":1,"msg":"%s"}`, err.Error())))
+	if err := plugin.Pull(streamPath, targetURL); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+	if save == "1" {
+		config.AddPull(streamPath, targetURL)
+		plugin.Modified["pull"] = config.Pull
+		if err := plugin.Save(); err != nil {
+			plugin.Error("save", zap.Error(err))
+		}
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +107,7 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			buffer := v.(*bytes.Buffer)
 			w.Write(buffer.Bytes())
 		} else {
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusNotFound)
 		}
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
@@ -124,22 +117,20 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				buffers := net.Buffers{mpegts.DefaultPATPacket, mpegts.DefaultPMTPacket, tsData.([]byte)}
 				buffers.WriteTo(w)
 			} else {
-				w.WriteHeader(404)
+				w.WriteHeader(http.StatusNotFound)
 			}
 		} else {
 			if f, err := os.Open(tsPath); err == nil {
 				io.Copy(w, f)
 				err = f.Close()
 			} else {
-				w.WriteHeader(404)
+				w.WriteHeader(http.StatusNotFound)
 			}
 		}
 	}
 }
 
 var plugin = InstallPlugin(hlsConfig)
-
-var _ IPuller = (*HLSPuller)(nil)
 
 // HLSPuller HLS拉流者
 type HLSPuller struct {
@@ -175,24 +166,26 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 		playlist, err = m3u8.Read(reader)
 	}
 	if err != nil {
-		plugin.Error("readM3U8 error:%s", err.Error())
+		plugin.Error("readM3U8", zap.Error(err))
 	}
 	return
 }
 
 func (p *HLSPuller) pull(info *M3u8Info) {
 	//请求失败自动退出
-	req := info.Req.WithContext(p)
+	req := info.Req.WithContext(p.Context)
 	client := http.Client{Timeout: time.Second * 5}
 	sequence := -1
 	lastTs := make(map[string]bool)
 	resp, err := client.Do(req)
 	defer func() {
-		plugin.Infof("hls %s exit:%v", p.Path, err)
-		p.Close()
+		plugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+		p.Stop()
 	}()
 	errcount := 0
 	for ; err == nil; resp, err = client.Do(req) {
+		p.Reader = resp.Body
+		p.Closer = resp.Body
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
@@ -201,7 +194,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 			//	return
 			//}
 			if playlist.Sequence <= sequence {
-				plugin.Warnf("same sequence:%d,max:%d", playlist.Sequence, sequence)
+				plugin.Warn("same sequence", zap.Int("sequence", playlist.Sequence), zap.Int("max", sequence))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -230,34 +223,36 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 			for _, v := range tsItems {
 				tsCost := TSCost{}
 				tsUrl, _ := info.Req.URL.Parse(v.Segment)
-				tsReq, _ := http.NewRequestWithContext(p, "GET", tsUrl.String(), nil)
+				tsReq, _ := http.NewRequestWithContext(p.Context, "GET", tsUrl.String(), nil)
 				tsReq.Header = p.TsHead
 				t1 := time.Now()
 				if tsRes, err := client.Do(tsReq); err == nil {
+					p.Reader = tsRes.Body
+					p.Closer = tsRes.Body
 					info.TSCount++
 					p.Closer = tsReq.Body
 					if body, err := ioutil.ReadAll(tsRes.Body); err == nil {
 						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
 						if p.SaveContext != nil && p.SaveContext.Err() == nil {
-							os.MkdirAll(filepath.Join(hlsConfig.Path, p.Path), 0666)
-							err = ioutil.WriteFile(filepath.Join(hlsConfig.Path, p.Path, filepath.Base(tsUrl.Path)), body, 0666)
+							os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0666)
+							err = ioutil.WriteFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), body, 0666)
 						}
 						t1 = time.Now()
 						p.Reader = bytes.NewReader(body)
 						p.TSPuller.Pull()
 						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
 					} else if err != nil {
-						plugin.Error("%s readTs:%v", p.Path, err)
+						plugin.Error("readTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 					}
 				} else if err != nil {
-					plugin.Error("%s reqTs:%v", p.Path, err)
+					plugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 				}
 				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
 
 			time.Sleep(time.Second * time.Duration(playlist.Target) * 2)
 		} else {
-			plugin.Error("%s readM3u8:%v", p.Path, err)
+			plugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 			errcount++
 			if errcount > 10 {
 				return

@@ -19,7 +19,7 @@ func AudioPacketToPESPreprocess(aacRaw []byte, aac_asc codec.AudioSpecificConfig
 	return
 }
 
-func AudioPacketToPES(frame *AudioFrame, aac_asc codec.AudioSpecificConfig) (packet mpegts.MpegTsPESPacket, err error) {
+func AudioPacketToPES(frame AudioFrame, aac_asc codec.AudioSpecificConfig) (packet mpegts.MpegTsPESPacket, err error) {
 	var data []byte
 	for _, b := range frame.Raw {
 		data = append(data, b...)

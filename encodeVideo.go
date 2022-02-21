@@ -10,7 +10,7 @@ import (
 	. "github.com/Monibuca/engine/v4/common"
 )
 
-func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice]) (packet mpegts.MpegTsPESPacket, err error) {
+func VideoPacketToPES(frame VideoFrame, dc DecoderConfiguration[NALUSlice]) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
 	buffer.Write(codec.NALU_AUD_BYTE)
