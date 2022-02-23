@@ -80,17 +80,9 @@ func (config *HLSConfig) API_Save(w http.ResponseWriter, r *http.Request) {
 func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("target")
 	streamPath := r.URL.Query().Get("streamPath")
-	save := r.URL.Query().Get("save")
-	if err := plugin.Pull(streamPath, targetURL); err != nil {
+	if err := plugin.Pull(streamPath, targetURL, r.URL.Query().Has("save")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-	if save == "1" {
-		config.AddPull(streamPath, targetURL)
-		plugin.Modified["pull"] = config.Pull
-		if err := plugin.Save(); err != nil {
-			plugin.Error("save", zap.Error(err))
-		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
