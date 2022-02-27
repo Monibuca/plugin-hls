@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/Monibuca/engine/v4"
-	"github.com/Monibuca/engine/v4/codec"
-	"github.com/Monibuca/engine/v4/codec/mpegts"
+	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/codec"
+	"m7s.live/engine/v4/codec/mpegts"
 )
 
 var memoryTs sync.Map
@@ -44,7 +44,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 	switch v := event.(type) {
 	case AudioDeConf:
 		hls.asc, err = decodeAudioSpecificConfig(v.AVCC[0])
-	case AudioFrame:
+	case *AudioFrame:
 		if hls.packet, err = AudioPacketToPES(v, hls.asc); err != nil {
 			return
 		}
@@ -59,7 +59,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			return
 		}
 		hls.audio_cc = uint16(pes.ContinuityCounter)
-	case VideoFrame:
+	case *VideoFrame:
 		hls.packet, err = VideoPacketToPES(v, hls.VideoTrack.DecoderConfiguration)
 		if err != nil {
 			return

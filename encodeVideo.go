@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"net"
 	"os"
-"github.com/Monibuca/engine/v4/codec"
-	"github.com/Monibuca/engine/v4/codec/mpegts"
-	. "github.com/Monibuca/engine/v4"
-	. "github.com/Monibuca/engine/v4/common"
+
+	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/codec"
+	"m7s.live/engine/v4/codec/mpegts"
+	. "m7s.live/engine/v4/common"
 )
 
-func VideoPacketToPES(frame VideoFrame, dc DecoderConfiguration[NALUSlice]) (packet mpegts.MpegTsPESPacket, err error) {
+func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice]) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
 	buffer.Write(codec.NALU_AUD_BYTE)
@@ -22,7 +23,7 @@ func VideoPacketToPES(frame VideoFrame, dc DecoderConfiguration[NALUSlice]) (pac
 	}
 	for _, nalu := range frame.Raw {
 		buffer.Write(codec.NALU_Delimiter1)
-		b:=net.Buffers(nalu)
+		b := net.Buffers(nalu)
 		b.WriteTo(buffer)
 	}
 	pktLength := buffer.Len() + 10 + 3

@@ -1,4 +1,4 @@
-module github.com/Monibuca/plugin-hls/v4
+module m7s.live/plugin/hls/v4
 
 go 1.18
 

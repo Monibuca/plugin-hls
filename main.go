@@ -1,4 +1,4 @@
-package hls
+package hls // import "m7s.live/plugin/hls/v4"
 
 import (
 	"bytes"
@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/Monibuca/engine/v4"
-	"github.com/Monibuca/engine/v4/codec/mpegts"
-	"github.com/Monibuca/engine/v4/config"
-	"github.com/Monibuca/engine/v4/util"
-	. "github.com/Monibuca/plugin-ts/v4"
 	"github.com/quangngotan95/go-m3u8/m3u8"
 	"go.uber.org/zap"
+	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/codec/mpegts"
+	"m7s.live/engine/v4/config"
+	"m7s.live/engine/v4/util"
+	. "m7s.live/plugin/ts/v4"
 )
 
 type HLSConfig struct {
@@ -46,12 +46,16 @@ func (c *HLSConfig) OnEvent(event any) {
 		if c.EnableWrite || c.EnableMemory {
 			go c.writeHLS(v.Stream)
 		}
-	case Puller:
-		p := &HLSPuller{}
-		p.Puller = v
-		var err error
-		if p.Video.Req, err = http.NewRequest("GET", v.RemoteURL, nil); err == nil {
-			plugin.Publish(v.RemoteURL, p)
+	case *Stream: //按需拉流
+		if c.PullOnSubscribe {
+			for streamPath, url := range c.PullList {
+				if streamPath == v.Path {
+					if err := plugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
+						plugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
+					}
+					break
+				}
+			}
 		}
 	}
 }
@@ -80,7 +84,7 @@ func (config *HLSConfig) API_Save(w http.ResponseWriter, r *http.Request) {
 func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("target")
 	streamPath := r.URL.Query().Get("streamPath")
-	if err := plugin.Pull(streamPath, targetURL, r.URL.Query().Has("save")); err != nil {
+	if err := plugin.Pull(streamPath, targetURL, new(HLSPuller), r.URL.Query().Has("save")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -254,9 +258,14 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 	}
 }
 
-func (p *HLSPuller) Pull(count int) {
-	go p.pull(&p.Video)
+func (p *HLSPuller) Connect() (err error) {
+	p.Video.Req, err = http.NewRequest("GET", p.RemoteURL, nil)
+	return
+}
+
+func (p *HLSPuller) Pull() {
 	if p.Audio.Req != nil {
 		go p.pull(&p.Audio)
 	}
+	p.pull(&p.Video)
 }
