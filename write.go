@@ -42,6 +42,38 @@ func (hls *HLSWriter) OnEvent(event any) {
 		}
 	}()
 	switch v := event.(type) {
+	case *HLSWriter:
+		if hlsConfig.Fragment > 0 {
+			hls.hls_fragment = hlsConfig.Fragment * 1000
+		} else {
+			hls.hls_fragment = 10000
+		}
+		hls.hls_playlist = Playlist{
+			Writer:         &hls.m3u8Buffer,
+			Version:        3,
+			Sequence:       0,
+			Targetduration: int(hls.hls_fragment / 666), // hlsFragment * 1.5 / 1000
+		}
+		hls.hls_path = filepath.Join(hlsConfig.Path, hls.Stream.Path, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
+		os.MkdirAll(filepath.Dir(hls.hls_path), 0755)
+		var file *os.File
+		file, err = os.OpenFile(hls.hls_path, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+		hls.record_playlist = Playlist{
+			Writer:         file,
+			Version:        3,
+			Sequence:       0,
+			Targetduration: int(hls.hls_fragment / 666), // hlsFragment * 1.5 / 1000
+		}
+		if err = hls.hls_playlist.Init(); err != nil {
+			return
+		}
+		if err = hls.record_playlist.Init(); err != nil {
+			return
+		}
 	case AudioDeConf:
 		hls.asc, err = decodeAudioSpecificConfig(v.AVCC[0])
 	case *AudioFrame:
@@ -137,46 +169,13 @@ func (config *HLSConfig) writeHLS(r *Stream) {
 		return
 	}
 	defer memoryM3u8.Delete(r.Path)
-	var err error
 	var outStream = &HLSWriter{
 		infoRing: ring.New(config.Window),
 	}
 	memoryM3u8.Store(r.Path, &outStream.m3u8Buffer)
-	if plugin.Subscribe(r.Path, outStream) != nil {
+	if plugin.SubscribeBlock(r.Path, outStream) != nil {
 		return
 	}
-	if config.Fragment > 0 {
-		outStream.hls_fragment = config.Fragment * 1000
-	} else {
-		outStream.hls_fragment = 10000
-	}
-	outStream.hls_playlist = Playlist{
-		Writer:         &outStream.m3u8Buffer,
-		Version:        3,
-		Sequence:       0,
-		Targetduration: int(outStream.hls_fragment / 666), // hlsFragment * 1.5 / 1000
-	}
-	outStream.hls_path = filepath.Join(config.Path, r.Path, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
-	os.MkdirAll(filepath.Dir(outStream.hls_path), 0755)
-	var file *os.File
-	file, err = os.OpenFile(outStream.hls_path, os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	outStream.record_playlist = Playlist{
-		Writer:         file,
-		Version:        3,
-		Sequence:       0,
-		Targetduration: int(outStream.hls_fragment / 666), // hlsFragment * 1.5 / 1000
-	}
-	if err = outStream.hls_playlist.Init(); err != nil {
-		return
-	}
-	if err = outStream.record_playlist.Init(); err != nil {
-		return
-	}
-	outStream.PlayBlock(outStream)
 	if config.EnableMemory {
 		outStream.infoRing.Do(func(i interface{}) {
 			if i != nil {
