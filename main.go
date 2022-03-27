@@ -38,13 +38,15 @@ type HLSConfig struct {
 
 func (c *HLSConfig) OnEvent(event any) {
 	switch v := event.(type) {
-	case config.Config:
+	case FirstConfig, config.Config:
 		if c.Filter != "" {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
 	case SEpublish:
 		if c.EnableWrite || c.EnableMemory {
-			go c.writeHLS(v.Stream)
+			if c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path) {
+				go c.writeHLS(v.Stream)
+			}
 		}
 	case *Stream: //按需拉流
 		if c.PullOnSubscribe {
