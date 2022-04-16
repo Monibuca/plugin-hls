@@ -92,7 +92,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		}
 		hls.audio_cc = uint16(pes.ContinuityCounter)
 	case *VideoFrame:
-		hls.packet, err = VideoPacketToPES(v, hls.VideoTrack.DecoderConfiguration)
+		hls.packet, err = VideoPacketToPES(v, hls.Video.Track.DecoderConfiguration)
 		if err != nil {
 			return
 		}
