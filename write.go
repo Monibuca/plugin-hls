@@ -61,7 +61,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		if err != nil {
 			return
 		}
-		defer file.Close()
+		hls.SetIO(file)
 		hls.record_playlist = Playlist{
 			Writer:         file,
 			Version:        3,
