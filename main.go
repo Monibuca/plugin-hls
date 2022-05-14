@@ -20,7 +20,6 @@ import (
 	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/config"
 	"m7s.live/engine/v4/util"
-	. "m7s.live/plugin/ts/v4"
 )
 
 type HLSConfig struct {
@@ -38,7 +37,18 @@ type HLSConfig struct {
 
 func (c *HLSConfig) OnEvent(event any) {
 	switch v := event.(type) {
-	case FirstConfig, config.Config:
+	case FirstConfig:
+		if c.Filter != "" {
+			c.filterReg = regexp.MustCompile(c.Filter)
+		}
+		if c.PullOnStart {
+			for streamPath, url := range c.PullList {
+				if err := plugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
+					plugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
+				}
+			}
+		}
+	case config.Config:
 		if c.Filter != "" {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
@@ -132,7 +142,8 @@ var plugin = InstallPlugin(hlsConfig)
 
 // HLSPuller HLS拉流者
 type HLSPuller struct {
-	TSPuller
+	TSPublisher
+	Puller
 	Video       M3u8Info
 	Audio       M3u8Info
 	TsHead      http.Header     `json:"-"` //用于提供cookie等特殊身份的http头
@@ -179,6 +190,13 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 	defer func() {
 		plugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 		p.Stop()
+	}()
+	tsbuffer := make(chan io.Reader, 1)
+	defer close(tsbuffer)
+	go func() {
+		for p.Reader = range tsbuffer {
+			p.TSPublisher.OnEvent(p.Reader)
+		}
 	}()
 	errcount := 0
 	for ; err == nil; resp, err = client.Do(req) {
@@ -236,8 +254,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 							err = ioutil.WriteFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), body, 0666)
 						}
 						t1 = time.Now()
-						p.Reader = bytes.NewReader(body)
-						p.TSPuller.Pull()
+						tsbuffer <- bytes.NewReader(body)
 						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
 					} else if err != nil {
 						plugin.Error("readTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
@@ -247,8 +264,6 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 				}
 				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
-
-			time.Sleep(time.Second * time.Duration(playlist.Target) * 2)
 		} else {
 			plugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 			errcount++
