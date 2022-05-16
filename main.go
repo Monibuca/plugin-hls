@@ -195,7 +195,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 	defer close(tsbuffer)
 	go func() {
 		for p.Reader = range tsbuffer {
-			p.TSPublisher.OnEvent(p.Reader)
+			p.TSPublisher.Feed(p.Reader)
 		}
 	}()
 	errcount := 0
