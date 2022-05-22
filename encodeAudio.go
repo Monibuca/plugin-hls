@@ -44,7 +44,7 @@ func AudioPacketToPES(frame *AudioFrame, aac_asc codec.AudioSpecificConfig) (pac
 	return
 }
 
-func decodeAudioSpecificConfig(audio []byte) (asc codec.AudioSpecificConfig, err error) {
+func DecodeAudioSpecificConfig(audio []byte) (asc codec.AudioSpecificConfig, err error) {
 	if len(audio) < 4 {
 		err = errors.New("decodeAudioSpecificConfig error 1")
 		return

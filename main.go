@@ -28,8 +28,6 @@ type HLSConfig struct {
 	config.Subscribe
 	Fragment     int64
 	Window       int
-	EnableWrite  bool   // 启动HLS写文件
-	EnableMemory bool   // 启动内存模式
 	Filter       string // 过滤，正则表达式
 	Path         string // 存放路径
 	filterReg    *regexp.Regexp
@@ -53,10 +51,8 @@ func (c *HLSConfig) OnEvent(event any) {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
 	case SEpublish:
-		if c.EnableWrite || c.EnableMemory {
-			if c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path) {
-				go c.writeHLS(v.Stream)
-			}
+		if c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path) {
+			go c.writeHLS(v.Stream)
 		}
 	case *Stream: //按需拉流
 		if c.PullOnSubscribe {
@@ -120,20 +116,11 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		tsPath := filepath.Join(hlsConfig.Path, fileName)
-		if hlsConfig.EnableMemory {
-			if tsData, ok := memoryTs.Load(tsPath); ok {
-				buffers := net.Buffers{mpegts.DefaultPATPacket, mpegts.DefaultPMTPacket, tsData.([]byte)}
-				buffers.WriteTo(w)
-			} else {
-				w.WriteHeader(http.StatusNotFound)
-			}
+		if tsData, ok := memoryTs.Load(tsPath); ok {
+			buffers := net.Buffers{mpegts.DefaultPATPacket, mpegts.DefaultPMTPacket, tsData.([]byte)}
+			buffers.WriteTo(w)
 		} else {
-			if f, err := os.Open(tsPath); err == nil {
-				io.Copy(w, f)
-				err = f.Close()
-			} else {
-				w.WriteHeader(http.StatusNotFound)
-			}
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}
 }

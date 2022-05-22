@@ -21,8 +21,7 @@ var memoryM3u8 sync.Map
 type HLSWriter struct {
 	hls_path           string
 	m3u8Buffer         bytes.Buffer
-	hls_playlist       Playlist
-	record_playlist    Playlist
+	playlist           Playlist
 	infoRing           *ring.Ring
 	asc                codec.AudioSpecificConfig
 	hls_fragment       int64
@@ -48,7 +47,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		} else {
 			hls.hls_fragment = 10000
 		}
-		hls.hls_playlist = Playlist{
+		hls.playlist = Playlist{
 			Writer:         &hls.m3u8Buffer,
 			Version:        3,
 			Sequence:       0,
@@ -62,20 +61,11 @@ func (hls *HLSWriter) OnEvent(event any) {
 			return
 		}
 		hls.SetIO(file)
-		hls.record_playlist = Playlist{
-			Writer:         file,
-			Version:        3,
-			Sequence:       0,
-			Targetduration: int(hls.hls_fragment / 666), // hlsFragment * 1.5 / 1000
-		}
-		if err = hls.hls_playlist.Init(); err != nil {
-			return
-		}
-		if err = hls.record_playlist.Init(); err != nil {
+		if err = hls.playlist.Init(); err != nil {
 			return
 		}
 	case AudioDeConf:
-		hls.asc, err = decodeAudioSpecificConfig(v.AVCC[0])
+		hls.asc, err = DecodeAudioSpecificConfig(v.AVCC[0])
 	case *AudioFrame:
 		if hls.packet, err = AudioPacketToPES(v, hls.asc); err != nil {
 			return
@@ -106,14 +96,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 
 				tsData := hls.hls_segment_data.Bytes()
 				tsFilePath := filepath.Join(filepath.Dir(hls.hls_path), tsFilename)
-				if hlsConfig.EnableWrite {
-					if err = writeHlsTsSegmentFile(tsFilePath, tsData); err != nil {
-						return
-					}
-				}
-				if hlsConfig.EnableMemory {
-					memoryTs.Store(tsFilePath, tsData)
-				}
+				memoryTs.Store(tsFilePath, tsData)
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - hls.vwrite_time) / 1000.0),
@@ -123,26 +106,23 @@ func (hls *HLSWriter) OnEvent(event any) {
 
 				if hls.hls_segment_count >= uint32(hlsConfig.Window) {
 					hls.m3u8Buffer.Reset()
-					if err = hls.hls_playlist.Init(); err != nil {
+					if err = hls.playlist.Init(); err != nil {
 						return
 					}
 					memoryTs.Delete(hls.infoRing.Value.(PlaylistInf).FilePath)
 					hls.infoRing.Value = inf
 					hls.infoRing = hls.infoRing.Next()
 					hls.infoRing.Do(func(i interface{}) {
-						hls.hls_playlist.WriteInf(i.(PlaylistInf))
+						hls.playlist.WriteInf(i.(PlaylistInf))
 					})
 				} else {
 					hls.infoRing.Value = inf
 					hls.infoRing = hls.infoRing.Next()
-					if err = hls.hls_playlist.WriteInf(inf); err != nil {
+					if err = hls.playlist.WriteInf(inf); err != nil {
 						return
 					}
 				}
 				inf.Title = tsFilename
-				if err = hls.record_playlist.WriteInf(inf); err != nil {
-					return
-				}
 				hls.hls_segment_count++
 				hls.vwrite_time = ts
 				hls.hls_segment_data.Reset()
@@ -176,11 +156,9 @@ func (config *HLSConfig) writeHLS(r *Stream) {
 	if plugin.SubscribeBlock(r.Path, outStream) != nil {
 		return
 	}
-	if config.EnableMemory {
-		outStream.infoRing.Do(func(i interface{}) {
-			if i != nil {
-				memoryTs.Delete(i.(PlaylistInf).FilePath)
-			}
-		})
-	}
+	outStream.infoRing.Do(func(i interface{}) {
+		if i != nil {
+			memoryTs.Delete(i.(PlaylistInf).FilePath)
+		}
+	})
 }

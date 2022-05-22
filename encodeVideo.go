@@ -3,7 +3,6 @@ package hls
 import (
 	"bytes"
 	"net"
-	"os"
 
 	. "m7s.live/engine/v4"
 	"m7s.live/engine/v4/codec"
@@ -55,32 +54,6 @@ func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice]) (pa
 	packet.Header.PesHeaderDataLength = 10
 
 	packet.Payload = buffer.Bytes()
-
-	return
-}
-
-func writeHlsTsSegmentFile(filename string, data []byte) (err error) {
-	var file *os.File
-
-	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	if err = mpegts.WriteDefaultPATPacket(file); err != nil {
-		return
-	}
-
-	if err = mpegts.WriteDefaultPMTPacket(file); err != nil {
-		return
-	}
-
-	if _, err = file.Write(data); err != nil {
-		return
-	}
-
-	file.Close()
 
 	return
 }
