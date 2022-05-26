@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,11 +25,11 @@ type HLSConfig struct {
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment     int64
-	Window       int
-	Filter       string // 过滤，正则表达式
-	Path         string // 存放路径
-	filterReg    *regexp.Regexp
+	Fragment  int64
+	Window    int
+	Filter    string // 过滤，正则表达式
+	Path      string
+	filterReg *regexp.Regexp
 }
 
 func (c *HLSConfig) OnEvent(event any) {
@@ -71,7 +70,6 @@ func (c *HLSConfig) OnEvent(event any) {
 var hlsConfig = &HLSConfig{
 	Fragment: 10,
 	Window:   2,
-	Path:     "hls",
 }
 
 func (config *HLSConfig) API_List(w http.ResponseWriter, r *http.Request) {
@@ -102,11 +100,7 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fileName := strings.TrimPrefix(r.URL.Path, "/hls/")
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		if f, err := os.Open(filepath.Join(hlsConfig.Path, fileName)); err == nil {
-			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
-			io.Copy(w, f)
-			err = f.Close()
-		} else if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
+		if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
 			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
 			buffer := v.(*bytes.Buffer)
 			w.Write(buffer.Bytes())
@@ -115,10 +109,10 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
-		tsPath := filepath.Join(hlsConfig.Path, fileName)
-		if tsData, ok := memoryTs.Load(tsPath); ok {
-			buffers := net.Buffers{mpegts.DefaultPATPacket, mpegts.DefaultPMTPacket, tsData.([]byte)}
-			buffers.WriteTo(w)
+		if tsData, ok := memoryTs.Load(fileName); ok {
+			w.Write(mpegts.DefaultPATPacket)
+			w.Write(mpegts.DefaultPMTPacket)
+			w.Write(tsData.([]byte))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}

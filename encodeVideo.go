@@ -2,7 +2,6 @@ package hls
 
 import (
 	"bytes"
-	"net"
 
 	. "m7s.live/engine/v4"
 	"m7s.live/engine/v4/codec"
@@ -22,8 +21,9 @@ func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice]) (pa
 	}
 	for _, nalu := range frame.Raw {
 		buffer.Write(codec.NALU_Delimiter1)
-		b := net.Buffers(nalu)
-		b.WriteTo(buffer)
+		for _, n := range nalu {
+			buffer.Write(n)
+		}
 	}
 	pktLength := buffer.Len() + 10 + 3
 	if pktLength > 0xffff {

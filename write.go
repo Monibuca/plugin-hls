@@ -3,9 +3,6 @@ package hls
 import (
 	"bytes"
 	"container/ring"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -19,7 +16,6 @@ var memoryTs sync.Map
 var memoryM3u8 sync.Map
 
 type HLSWriter struct {
-	hls_path           string
 	m3u8Buffer         bytes.Buffer
 	playlist           Playlist
 	infoRing           *ring.Ring
@@ -53,14 +49,6 @@ func (hls *HLSWriter) OnEvent(event any) {
 			Sequence:       0,
 			Targetduration: int(hls.hls_fragment / 666), // hlsFragment * 1.5 / 1000
 		}
-		hls.hls_path = filepath.Join(hlsConfig.Path, hls.Stream.Path, fmt.Sprintf("%d.m3u8", time.Now().Unix()))
-		os.MkdirAll(filepath.Dir(hls.hls_path), 0755)
-		var file *os.File
-		file, err = os.OpenFile(hls.hls_path, os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			return
-		}
-		hls.SetIO(file)
 		if err = hls.playlist.Init(); err != nil {
 			return
 		}
@@ -93,14 +81,13 @@ func (hls *HLSWriter) OnEvent(event any) {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
-
+				tsFilePath := hls.Subscriber.Stream.Path + "/" + tsFilename
 				tsData := hls.hls_segment_data.Bytes()
-				tsFilePath := filepath.Join(filepath.Dir(hls.hls_path), tsFilename)
 				memoryTs.Store(tsFilePath, tsData)
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - hls.vwrite_time) / 1000.0),
-					Title:    filepath.Base(filepath.Dir(hls.hls_path)) + "/" + tsFilename,
+					Title:    hls.Subscriber.Stream.StreamName + "/" + tsFilename,
 					FilePath: tsFilePath,
 				}
 
