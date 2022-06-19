@@ -62,7 +62,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			Pid:                       0x102,
 			IsKeyFrame:                false,
 			ContinuityCounter:         byte(hls.audio_cc % 16),
-			ProgramClockReferenceBase: uint64(v.DTS),
+			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
 		}
 		//frame.ProgramClockReferenceBase = 0
 		if err = mpegts.WritePESPacket(&hls.hls_segment_data, pes, hls.packet); err != nil {
@@ -70,11 +70,11 @@ func (hls *HLSWriter) OnEvent(event any) {
 		}
 		hls.audio_cc = uint16(pes.ContinuityCounter)
 	case *VideoFrame:
-		hls.packet, err = VideoPacketToPES(v, hls.Video.Track.DecoderConfiguration)
+		hls.packet, err = VideoPacketToPES(v, hls.Video.Track.DecoderConfiguration, hls.SkipTS)
 		if err != nil {
 			return
 		}
-		ts := v.AbsTime
+		ts := v.AbsTime - hls.SkipTS
 		if v.IFrame {
 			// 当前的时间戳减去上一个ts切片的时间戳
 			if int64(ts-hls.vwrite_time) >= hls.hls_fragment {
@@ -120,7 +120,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			Pid:                       0x101,
 			IsKeyFrame:                v.IFrame,
 			ContinuityCounter:         byte(hls.video_cc % 16),
-			ProgramClockReferenceBase: uint64(v.DTS),
+			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
 		}
 		if err = mpegts.WritePESPacket(&hls.hls_segment_data, pes, hls.packet); err != nil {
 			return
@@ -140,7 +140,7 @@ func (config *HLSConfig) writeHLS(r *Stream) {
 		infoRing: ring.New(config.Window),
 	}
 	memoryM3u8.Store(r.Path, &outStream.m3u8Buffer)
-	if plugin.SubscribeBlock(r.Path, outStream) != nil {
+	if plugin.SubscribeBlock(r.Path, outStream, SUBTYPE_RAW) != nil {
 		return
 	}
 	outStream.infoRing.Do(func(i interface{}) {
