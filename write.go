@@ -24,7 +24,7 @@ type HLSWriter struct {
 	hls_segment_count  uint32 // hls segment count
 	vwrite_time        uint32
 	video_cc, audio_cc uint16
-	hls_segment_data   bytes.Buffer
+	hls_segment_data   *bytes.Buffer
 	packet             mpegts.MpegTsPESPacket
 	Subscriber
 }
@@ -43,6 +43,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		} else {
 			hls.hls_fragment = 10000
 		}
+		hls.hls_segment_data = new(bytes.Buffer)
 		hls.playlist = Playlist{
 			Writer:         &hls.m3u8Buffer,
 			Version:        3,
@@ -65,7 +66,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
 		}
 		//frame.ProgramClockReferenceBase = 0
-		if err = mpegts.WritePESPacket(&hls.hls_segment_data, pes, hls.packet); err != nil {
+		if err = mpegts.WritePESPacket(hls.hls_segment_data, pes, hls.packet); err != nil {
 			return
 		}
 		hls.audio_cc = uint16(pes.ContinuityCounter)
@@ -82,8 +83,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 				tsFilePath := hls.Subscriber.Stream.Path + "/" + tsFilename
-				tsData := hls.hls_segment_data.Bytes()
-				memoryTs.Store(tsFilePath, tsData)
+				memoryTs.Store(tsFilePath, hls.hls_segment_data.Bytes())
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - hls.vwrite_time) / 1000.0),
@@ -112,7 +112,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 				inf.Title = tsFilename
 				hls.hls_segment_count++
 				hls.vwrite_time = ts
-				hls.hls_segment_data.Reset()
+				hls.hls_segment_data = new(bytes.Buffer)
 			}
 		}
 
@@ -122,7 +122,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			ContinuityCounter:         byte(hls.video_cc % 16),
 			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
 		}
-		if err = mpegts.WritePESPacket(&hls.hls_segment_data, pes, hls.packet); err != nil {
+		if err = mpegts.WritePESPacket(hls.hls_segment_data, pes, hls.packet); err != nil {
 			return
 		}
 		hls.video_cc = uint16(pes.ContinuityCounter)
