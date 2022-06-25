@@ -164,7 +164,7 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 func (p *HLSPuller) pull(info *M3u8Info) {
 	//请求失败自动退出
 	req := info.Req.WithContext(p.Context)
-	client := http.Client{Timeout: time.Second * 5}
+	client := http.Client{Timeout: time.Second * 10}
 	sequence := -1
 	lastTs := make(map[string]bool)
 	resp, err := client.Do(req)
