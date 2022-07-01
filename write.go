@@ -84,6 +84,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 				tsFilePath := hls.Subscriber.Stream.Path + "/" + tsFilename
 				memoryTs.Store(tsFilePath, hls.hls_segment_data.Bytes())
+				hls.hls_segment_data = new(bytes.Buffer)
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - hls.vwrite_time) / 1000.0),
@@ -112,7 +113,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 				inf.Title = tsFilename
 				hls.hls_segment_count++
 				hls.vwrite_time = ts
-				hls.hls_segment_data = new(bytes.Buffer)
+			
 			}
 		}
 
