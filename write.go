@@ -113,7 +113,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 				inf.Title = tsFilename
 				hls.hls_segment_count++
 				hls.vwrite_time = ts
-			
+
 			}
 		}
 
@@ -141,7 +141,7 @@ func (config *HLSConfig) writeHLS(r *Stream) {
 		infoRing: ring.New(config.Window),
 	}
 	memoryM3u8.Store(r.Path, &outStream.m3u8Buffer)
-	if plugin.SubscribeBlock(r.Path, outStream, SUBTYPE_RAW) != nil {
+	if HLSPlugin.SubscribeBlock(r.Path, outStream, SUBTYPE_RAW) != nil {
 		return
 	}
 	outStream.infoRing.Do(func(i interface{}) {

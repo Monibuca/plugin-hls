@@ -40,8 +40,8 @@ func (c *HLSConfig) OnEvent(event any) {
 		}
 		if c.PullOnStart {
 			for streamPath, url := range c.PullList {
-				if err := plugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
-					plugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
+				if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
+					HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
 				}
 			}
 		}
@@ -57,8 +57,8 @@ func (c *HLSConfig) OnEvent(event any) {
 		if c.PullOnSubscribe {
 			for streamPath, url := range c.PullList {
 				if streamPath == v.Path {
-					if err := plugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
-						plugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
+					if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
+						HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
 					}
 					break
 				}
@@ -90,11 +90,11 @@ func (config *HLSConfig) API_Save(w http.ResponseWriter, r *http.Request) {
 func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("target")
 	streamPath := r.URL.Query().Get("streamPath")
-	if err := plugin.Pull(streamPath, targetURL, new(HLSPuller), r.URL.Query().Has("save")); err != nil {
+	if err := HLSPlugin.Pull(streamPath, targetURL, new(HLSPuller), r.URL.Query().Has("save")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	} else {
+		w.Write([]byte("ok"))
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +119,7 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var plugin = InstallPlugin(hlsConfig)
+var HLSPlugin = InstallPlugin(hlsConfig)
 
 // HLSPuller HLS拉流者
 type HLSPuller struct {
@@ -156,7 +156,7 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 		playlist, err = m3u8.Read(reader)
 	}
 	if err != nil {
-		plugin.Error("readM3U8", zap.Error(err))
+		HLSPlugin.Error("readM3U8", zap.Error(err))
 	}
 	return
 }
@@ -169,7 +169,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 	lastTs := make(map[string]bool)
 	resp, err := client.Do(req)
 	defer func() {
-		plugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+		HLSPlugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 		p.Stop()
 	}()
 	tsbuffer := make(chan io.Reader, 1)
@@ -191,7 +191,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 			//	return
 			//}
 			if playlist.Sequence <= sequence {
-				plugin.Warn("same sequence", zap.Int("sequence", playlist.Sequence), zap.Int("max", sequence))
+				HLSPlugin.Warn("same sequence", zap.Int("sequence", playlist.Sequence), zap.Int("max", sequence))
 				time.Sleep(time.Second)
 				continue
 			}
@@ -238,15 +238,15 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 						tsbuffer <- bytes.NewReader(body)
 						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
 					} else if err != nil {
-						plugin.Error("readTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+						HLSPlugin.Error("readTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 					}
 				} else if err != nil {
-					plugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+					HLSPlugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 				}
 				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
 		} else {
-			plugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+			HLSPlugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 			errcount++
 			if errcount > 10 {
 				return
