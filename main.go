@@ -231,7 +231,7 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 					if body, err := ioutil.ReadAll(tsRes.Body); err == nil {
 						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
 						if p.SaveContext != nil && p.SaveContext.Err() == nil {
-							os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0666)
+							os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0766)
 							err = ioutil.WriteFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), body, 0666)
 						}
 						t1 = time.Now()
