@@ -98,7 +98,8 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 }
 
 func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fileName := strings.TrimPrefix(r.URL.Path, "/hls/")
+	fileName := strings.TrimPrefix(r.URL.Path, "/hls")
+	fileName = strings.TrimPrefix(fileName, "/")
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
 		if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
 			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
