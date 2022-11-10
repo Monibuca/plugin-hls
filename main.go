@@ -16,6 +16,7 @@ import (
 	"github.com/quangngotan95/go-m3u8/m3u8"
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/config"
 	"m7s.live/engine/v4/util"
@@ -111,9 +112,14 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		if tsData, ok := memoryTs.Load(fileName); ok {
+			tsInfo := tsData.(*TSInfo)
 			w.Write(mpegts.DefaultPATPacket)
-			w.Write(mpegts.DefaultPMTPacket)
-			w.Write(tsData.([]byte))
+			if tsInfo.TrackPlayer.Video.Track.CodecID == codec.CodecID_H264 {
+				w.Write(mpegts.H264PMTPacket)
+			} else {
+				w.Write(mpegts.H265PMTPacket)
+			}
+			w.Write(tsInfo.Data)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}

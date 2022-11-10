@@ -10,11 +10,16 @@ import (
 	. "m7s.live/engine/v4"
 	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
+	"m7s.live/engine/v4/track"
 )
 
 var memoryTs sync.Map
 var memoryM3u8 sync.Map
 
+type TSInfo struct {
+	Data []byte
+	*HLSWriter
+}
 type HLSWriter struct {
 	m3u8Buffer         bytes.Buffer
 	playlist           Playlist
@@ -60,7 +65,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 			return
 		}
 		pes := &mpegts.MpegtsPESFrame{
-			Pid:                       0x102,
+			Pid:                       mpegts.PID_AUDIO,
 			IsKeyFrame:                false,
 			ContinuityCounter:         byte(hls.audio_cc % 16),
 			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
@@ -82,13 +87,13 @@ func (hls *HLSWriter) OnEvent(event any) {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
-				tsFilePath := hls.Subscriber.Stream.Path + "/" + tsFilename
-				memoryTs.Store(tsFilePath, hls.hls_segment_data.Bytes())
+				tsFilePath := hls.Stream.Path + "/" + tsFilename
+				memoryTs.Store(tsFilePath, &TSInfo{hls.hls_segment_data.Bytes(), hls})
 				hls.hls_segment_data = new(bytes.Buffer)
 				inf := PlaylistInf{
 					//浮点计算精度
 					Duration: float64((ts - hls.vwrite_time) / 1000.0),
-					Title:    hls.Subscriber.Stream.StreamName + "/" + tsFilename,
+					Title:    hls.Stream.StreamName + "/" + tsFilename,
 					FilePath: tsFilePath,
 				}
 
@@ -118,7 +123,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		}
 
 		pes := &mpegts.MpegtsPESFrame{
-			Pid:                       0x101,
+			Pid:                       mpegts.PID_VIDEO,
 			IsKeyFrame:                v.IFrame,
 			ContinuityCounter:         byte(hls.video_cc % 16),
 			ProgramClockReferenceBase: uint64(v.DTS - hls.SkipTS*90),
@@ -127,6 +132,10 @@ func (hls *HLSWriter) OnEvent(event any) {
 			return
 		}
 		hls.video_cc = uint16(pes.ContinuityCounter)
+	case *track.Audio:
+		if v.CodecID == codec.CodecID_AAC {
+			hls.AddTrack(v)
+		}
 	default:
 		hls.Subscriber.OnEvent(event)
 	}
