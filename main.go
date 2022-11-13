@@ -114,11 +114,15 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if tsData, ok := memoryTs.Load(fileName); ok {
 			tsInfo := tsData.(*TSInfo)
 			w.Write(mpegts.DefaultPATPacket)
-			if tsInfo.TrackPlayer.Video.Track.CodecID == codec.CodecID_H264 {
-				w.Write(mpegts.H264PMTPacket)
-			} else {
-				w.Write(mpegts.H265PMTPacket)
+			var vcodec codec.VideoCodecID
+			var acodec codec.AudioCodecID
+			if tsInfo.Video.Track != nil {
+				vcodec = tsInfo.Video.Track.CodecID
 			}
+			if tsInfo.Audio.Track != nil {
+				acodec = tsInfo.Audio.Track.CodecID
+			}
+			mpegts.WritePMTPacket(w, vcodec, acodec)
 			w.Write(tsInfo.Data)
 		} else {
 			w.WriteHeader(http.StatusNotFound)

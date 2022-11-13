@@ -12,7 +12,11 @@ import (
 func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice], skipTS uint32) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
-	buffer.Write(codec.NALU_AUD_BYTE)
+	if len(dc.Raw) == 2 {
+		buffer.Write(codec.NALU_AUD_BYTE)
+	} else {
+		buffer.Write(codec.AudNalu)
+	}
 	if frame.IFrame {
 		annexB := VideoDeConf(dc).GetAnnexB()
 		annexB.WriteTo(buffer)

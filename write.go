@@ -24,7 +24,7 @@ type HLSWriter struct {
 	m3u8Buffer         bytes.Buffer
 	playlist           Playlist
 	infoRing           *ring.Ring
-	asc                codec.AudioSpecificConfig
+	asc                *codec.AudioSpecificConfig
 	hls_fragment       int64
 	hls_segment_count  uint32 // hls segment count
 	vwrite_time        uint32
