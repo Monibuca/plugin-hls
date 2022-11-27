@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	_ "embed"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +25,9 @@ import (
 	"m7s.live/engine/v4/util"
 )
 
+//go:embed default.ts
+var defaultTS []byte
+
 type HLSConfig struct {
 	config.Publish
 	config.Pull
@@ -30,6 +36,7 @@ type HLSConfig struct {
 	Window    int
 	Filter    string // 过滤，正则表达式
 	Path      string
+	DefaultTS string // 默认的ts文件
 	filterReg *regexp.Regexp
 }
 
@@ -44,6 +51,12 @@ func (c *HLSConfig) OnEvent(event any) {
 				if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
 					HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
 				}
+			}
+		}
+		if c.DefaultTS != "" {
+			ts, err := os.ReadFile(c.DefaultTS)
+			if err == nil {
+				defaultTS = ts
 			}
 		}
 	case config.Config:
@@ -107,7 +120,22 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			buffer := v.(*bytes.Buffer)
 			w.Write(buffer.Bytes())
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			var seq = 0
+			c, err := r.Cookie("seq")
+			if err == nil {
+				if seq, err = strconv.Atoi(c.Value); err == nil {
+					seq++
+				}
+			}
+			http.SetCookie(w, &http.Cookie{Name: "seq", Value: strconv.Itoa(seq), Path: "/hls/" + fileName, Expires: time.Now().Add(time.Minute)})
+			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")
+			w.Write([]byte(fmt.Sprintf(`#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:%d
+#EXT-X-TARGETDURATION:3
+#EXTINF:3.000,
+default.ts`, seq)))
+			// w.WriteHeader(http.StatusNotFound)
 		}
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
@@ -125,7 +153,8 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			mpegts.WritePMTPacket(w, vcodec, acodec)
 			w.Write(tsInfo.Data)
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			w.Write(defaultTS)
+			// w.WriteHeader(http.StatusNotFound)
 		}
 	}
 }
