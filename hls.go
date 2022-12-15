@@ -3,7 +3,6 @@ package hls
 import (
 	"fmt"
 	"io"
-
 )
 
 const (
@@ -24,6 +23,7 @@ type Playlist struct {
 	Key            PlaylistKey // specifies how to decrypt them. (4.3.2.4) -- 解密媒体文件的必要信息(表示怎么对media segments进行解码).
 	EndList        string      // indicates that no more Media Segments will be added to the Media Playlist file. (4.3.3.4) -- 标示没有更多媒体文件将会加入到播放列表中,它可能会出现在播放列表文件的任何地方,但是不能出现两次或以上.
 	Inf            PlaylistInf // specifies the duration of a Media Segment. (4.3.2.1) -- 指定每个媒体段(ts)的持续时间.
+	tsCount        int
 }
 
 // Discontinuity :
@@ -54,7 +54,6 @@ func (pl *Playlist) Init() (err error) {
 	// 	"#EXT-X-DISCONTINUITY:%d\n"+
 	// 	"#EXT-X-KEY:METHOD=%s,URI=%s,IV=%s\n"+
 	// 	"#EXT-X-ENDLIST", hls.Version, hls.Sequence, hls.Targetduration, hls.PlaylistType, hls.Discontinuity, hls.Key.Method, hls.Key.Uri, hls.Key.IV)
-
 	ss := fmt.Sprintf("#EXTM3U\n"+
 		"#EXT-X-VERSION:%d\n"+
 		"#EXT-X-MEDIA-SEQUENCE:%d\n"+
@@ -69,5 +68,6 @@ func (pl *Playlist) WriteInf(inf PlaylistInf) (err error) {
 	ss := fmt.Sprintf("#EXTINF:%.3f,\n"+
 		"%s\n", inf.Duration, inf.Title)
 	_, err = pl.Write([]byte(ss))
+	pl.tsCount++
 	return
 }

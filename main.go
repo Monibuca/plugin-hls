@@ -8,36 +8,37 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/quangngotan95/go-m3u8/m3u8"
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
-	"m7s.live/engine/v4/codec"
-	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/config"
 	"m7s.live/engine/v4/util"
 )
 
 //go:embed default.ts
 var defaultTS []byte
-
+var defaultSeq = 0 // 默认片头的全局序号
 type HLSConfig struct {
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment  int64
-	Window    int
-	Filter    string // 过滤，正则表达式
-	Path      string
-	DefaultTS string // 默认的ts文件
-	filterReg *regexp.Regexp
+	Fragment          int64
+	Window            int
+	Filter            string // 过滤，正则表达式
+	Path              string
+	DefaultTS         string  // 默认的ts文件
+	DefaultTSDuration float64 // 默认的ts文件时长(秒)
+	filterReg         *regexp.Regexp
 }
 
 func (c *HLSConfig) OnEvent(event any) {
@@ -57,7 +58,21 @@ func (c *HLSConfig) OnEvent(event any) {
 			ts, err := os.ReadFile(c.DefaultTS)
 			if err == nil {
 				defaultTS = ts
+			} else {
+				log.Panic("read default ts error")
 			}
+		} else {
+			c.DefaultTSDuration = 3.88
+		}
+		if c.DefaultTSDuration == 0 {
+			log.Panic("default ts duration error")
+		} else {
+			go func() {
+				ticker := time.NewTicker(time.Duration(c.DefaultTSDuration * float64(time.Second)))
+				for range ticker.C {
+					defaultSeq++
+				}
+			}()
 		}
 	case config.Config:
 		if c.Filter != "" {
@@ -115,43 +130,42 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fileName := strings.TrimPrefix(r.URL.Path, "/hls")
 	fileName = strings.TrimPrefix(fileName, "/")
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
+		w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")
 		if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
-			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl") //audio/x-mpegurl
-			buffer := v.(*bytes.Buffer)
-			w.Write(buffer.Bytes())
-		} else {
-			var seq = 0
-			c, err := r.Cookie("seq")
-			if err == nil {
-				if seq, err = strconv.Atoi(c.Value); err == nil {
-					seq++
+			switch hls := v.(type) {
+			case *HLSWriter:
+				hls.RLock()
+				w.Write(hls.Bytes())
+				hls.RUnlock()
+				return
+			case string:
+				if _, ok := memoryM3u8.Load(hls); ok {
+					ss := strings.Split(hls, "/")
+					m3u8 := fmt.Sprintf(`#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=2560000
+%s/%s.m3u8
+					`, ss[len(ss)-2], ss[len(ss)-1])
+					w.Write([]byte(m3u8))
+					return
 				}
 			}
-			http.SetCookie(w, &http.Cookie{Name: "seq", Value: strconv.Itoa(seq), Path: "/hls/" + fileName, Expires: time.Now().Add(time.Minute)})
-			w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")
-			w.Write([]byte(fmt.Sprintf(`#EXTM3U
+		}
+		w.Write([]byte(fmt.Sprintf(`#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-MEDIA-SEQUENCE:%d
-#EXT-X-TARGETDURATION:3
-#EXTINF:3.000,
-default.ts`, seq)))
-			// w.WriteHeader(http.StatusNotFound)
-		}
+#EXT-X-TARGETDURATION:%d
+#EXT-X-DISCONTINUITY-SEQUENCE:%d
+#EXT-X-DISCONTINUITY
+#EXTINF:%.3f,
+default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration)), defaultSeq, config.DefaultTSDuration)))
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		if tsData, ok := memoryTs.Load(fileName); ok {
-			tsInfo := tsData.(*TSInfo)
-			w.Write(mpegts.DefaultPATPacket)
-			var vcodec codec.VideoCodecID
-			var acodec codec.AudioCodecID
-			if tsInfo.Video.Track != nil {
-				vcodec = tsInfo.Video.Track.CodecID
-			}
-			if tsInfo.Audio.Track != nil {
-				acodec = tsInfo.Audio.Track.CodecID
-			}
-			mpegts.WritePMTPacket(w, vcodec, acodec)
-			w.Write(tsInfo.Data)
+			tsInfo := tsData.(net.Buffers)
+			var data net.Buffers
+			data = append(data, tsInfo...)
+			data.WriteTo(w)
 		} else {
 			w.Write(defaultTS)
 			// w.WriteHeader(http.StatusNotFound)
