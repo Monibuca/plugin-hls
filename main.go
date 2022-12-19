@@ -215,7 +215,7 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 	return
 }
 
-func (p *HLSPuller) pull(info *M3u8Info) {
+func (p *HLSPuller) pull(info *M3u8Info) error {
 	//请求失败自动退出
 	req := info.Req.WithContext(p.Context)
 	client := http.Client{Timeout: time.Second * 10}
@@ -303,11 +303,12 @@ func (p *HLSPuller) pull(info *M3u8Info) {
 			HLSPlugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 			errcount++
 			if errcount > 10 {
-				return
+				return err
 			}
 			//return
 		}
 	}
+	return err
 }
 
 func (p *HLSPuller) Connect() (err error) {
@@ -315,9 +316,9 @@ func (p *HLSPuller) Connect() (err error) {
 	return
 }
 
-func (p *HLSPuller) Pull() {
+func (p *HLSPuller) Pull() error {
 	if p.Audio.Req != nil {
 		go p.pull(&p.Audio)
 	}
-	p.pull(&p.Video)
+	return p.pull(&p.Video)
 }
