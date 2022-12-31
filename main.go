@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ type HLSConfig struct {
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment          int64
+	Fragment          float64
 	Window            int
 	Filter            string // 过滤，正则表达式
 	Path              string
@@ -47,11 +48,9 @@ func (c *HLSConfig) OnEvent(event any) {
 		if c.Filter != "" {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
-		if c.PullOnStart {
-			for streamPath, url := range c.PullList {
-				if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
-					HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
-				}
+		for streamPath, url := range c.PullOnStart {
+			if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), 0); err != nil {
+				HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
 			}
 		}
 		if c.DefaultTS != "" {
@@ -83,14 +82,12 @@ func (c *HLSConfig) OnEvent(event any) {
 			go c.writeHLS(v.Stream)
 		}
 	case *Stream: //按需拉流
-		if c.PullOnSubscribe {
-			for streamPath, url := range c.PullList {
-				if streamPath == v.Path {
-					if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), false); err != nil {
-						HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
-					}
-					break
+		for streamPath, url := range c.PullOnSub {
+			if streamPath == v.Path {
+				if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), 0); err != nil {
+					HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
 				}
+				break
 			}
 		}
 	}
@@ -119,7 +116,8 @@ func (config *HLSConfig) API_Save(w http.ResponseWriter, r *http.Request) {
 func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	targetURL := r.URL.Query().Get("target")
 	streamPath := r.URL.Query().Get("streamPath")
-	if err := HLSPlugin.Pull(streamPath, targetURL, new(HLSPuller), r.URL.Query().Has("save")); err != nil {
+	save, _ := strconv.Atoi(r.URL.Query().Get("save"))
+	if err := HLSPlugin.Pull(streamPath, targetURL, new(HLSPuller), save); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	} else {
 		w.Write([]byte("ok"))

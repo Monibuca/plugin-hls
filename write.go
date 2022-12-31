@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
 	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
@@ -24,9 +25,9 @@ type HLSWriter struct {
 	playlist           Playlist
 	infoRing           *ring.Ring
 	asc                *codec.AudioSpecificConfig
-	hls_fragment       int64
+	hls_fragment       float64
 	hls_segment_count  uint32 // hls segment count
-	vwrite_time        uint32
+	vwrite_time        float64
 	video_cc, audio_cc byte
 	hls_segment_data   *bytes.Buffer
 	packet             mpegts.MpegTsPESPacket
@@ -98,10 +99,10 @@ func (hls *HLSWriter) OnEvent(event any) {
 		if err != nil {
 			return
 		}
-		ts := v.AbsTime - hls.SkipTS
+		ts := float64(v.AbsTime - hls.SkipTS)
 		if v.IFrame {
 			// 当前的时间戳减去上一个ts切片的时间戳
-			if int64(ts-hls.vwrite_time) >= hls.hls_fragment {
+			if ts-hls.vwrite_time >= hls.hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 				tsFilePath := hls.Stream.Path + "/" + tsFilename
@@ -114,7 +115,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 				inf := PlaylistInf{
 
 					//浮点计算精度
-					Duration: float64((ts - hls.vwrite_time) / 1000.0),
+					Duration: (ts - hls.vwrite_time) / 1000.0,
 					Title:    tsFilename,
 					FilePath: tsFilePath,
 				}
@@ -169,7 +170,9 @@ func (config *HLSConfig) writeHLS(r *Stream) {
 	var outStream = &HLSWriter{
 		infoRing: ring.New(config.Window),
 	}
-	if HLSPlugin.Subscribe(r.Path, outStream) != nil {
+	outStream.IsInternal = true
+	if err := HLSPlugin.Subscribe(r.Path, outStream); err != nil {
+		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
 
