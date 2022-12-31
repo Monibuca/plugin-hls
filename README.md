@@ -36,9 +36,8 @@ hls:
         delayclosetimeout: 0
     pull:
         repull: 0
-        pullonstart: false
-        pullonsubscribe: false
-        pulllist: {}
+        pullonstart: {} # 服务启动时自动拉流
+        pullonsub: {} # 订阅时自动拉流(按需拉流)
     subscribe:
         subaudio: true
         subvideo: true
