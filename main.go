@@ -1,13 +1,11 @@
 package hls // import "m7s.live/plugin/hls/v4"
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	_ "embed"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"net"
@@ -189,14 +187,6 @@ type M3u8Info struct {
 	M3U8Count int           //一共拉取的m3u8文件数量
 	TSCount   int           //一共拉取的ts文件数量
 	LastM3u8  string        //最后一个m3u8文件内容
-	M3u8Info  []TSCost      //每一个ts文件的消耗
-}
-
-// TSCost ts文件拉取的消耗信息
-type TSCost struct {
-	DownloadCost int
-	DecodeCost   int
-	BufferLength int
 }
 
 func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
@@ -216,25 +206,17 @@ func readM3U8(res *http.Response) (playlist *m3u8.Playlist, err error) {
 func (p *HLSPuller) pull(info *M3u8Info) error {
 	//请求失败自动退出
 	req := info.Req.WithContext(p.Context)
-	client := http.Client{Timeout: time.Second * 10}
+	client := http.Client{}
 	sequence := -1
 	lastTs := make(map[string]bool)
+	tsbuffer := make(chan io.ReadCloser)
 	resp, err := client.Do(req)
 	defer func() {
 		HLSPlugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+		defer close(tsbuffer)
 		p.Stop()
 	}()
-	tsbuffer := make(chan io.Reader, 1)
-	defer close(tsbuffer)
-	go func() {
-		for p.Reader = range tsbuffer {
-			p.TSPublisher.Feed(p.Reader)
-		}
-	}()
-	errcount := 0
-	for ; err == nil; resp, err = client.Do(req) {
-		p.Reader = resp.Body
-		p.Closer = resp.Body
+	for errcount := 0; err == nil; resp, err = client.Do(req) {
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
@@ -264,38 +246,32 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 					tsItems = append(tsItems, v)
 				}
 			}
+			HLSPlugin.Debug("readM3U8", zap.Int("sequence", sequence), zap.Int("tscount", len(tsItems)))
 			lastTs = thisTs
 			if len(tsItems) > 3 {
 				tsItems = tsItems[len(tsItems)-3:]
 			}
-			info.M3u8Info = nil
 			for _, v := range tsItems {
-				tsCost := TSCost{}
 				tsUrl, _ := info.Req.URL.Parse(v.Segment)
 				tsReq, _ := http.NewRequestWithContext(p.Context, "GET", tsUrl.String(), nil)
 				tsReq.Header = p.TsHead
-				t1 := time.Now()
+				// t1 := time.Now()
+				HLSPlugin.Debug("start download ts", zap.String("tsUrl", tsUrl.String()))
 				if tsRes, err := client.Do(tsReq); err == nil {
-					p.Reader = tsRes.Body
-					p.Closer = tsRes.Body
 					info.TSCount++
-					p.Closer = tsReq.Body
-					if body, err := ioutil.ReadAll(tsRes.Body); err == nil {
-						tsCost.DownloadCost = int(time.Since(t1) / time.Millisecond)
-						if p.SaveContext != nil && p.SaveContext.Err() == nil {
-							os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0766)
-							err = ioutil.WriteFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), body, 0666)
+					p.SetIO(tsRes.Body)
+					if p.SaveContext != nil && p.SaveContext.Err() == nil {
+						os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0766)
+						if f, err := os.OpenFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666); err == nil {
+							p.SetIO(io.TeeReader(tsRes.Body, f))
+							p.Closer = f
 						}
-						t1 = time.Now()
-						tsbuffer <- bytes.NewReader(body)
-						tsCost.DecodeCost = int(time.Since(t1) / time.Millisecond)
-					} else if err != nil {
-						HLSPlugin.Error("readTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 					}
+					p.Feed(p)
+					p.Close()
 				} else if err != nil {
 					HLSPlugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 				}
-				info.M3u8Info = append(info.M3u8Info, tsCost)
 			}
 		} else {
 			HLSPlugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
@@ -303,7 +279,6 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 			if errcount > 10 {
 				return err
 			}
-			//return
 		}
 	}
 	return err
