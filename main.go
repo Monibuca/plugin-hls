@@ -2,6 +2,7 @@ package hls // import "m7s.live/plugin/hls/v4"
 
 import (
 	"compress/gzip"
+	"container/ring"
 	"context"
 	_ "embed"
 	"fmt"
@@ -27,6 +28,8 @@ import (
 //go:embed default.ts
 var defaultTS []byte
 var defaultSeq = 0 // 默认片头的全局序号
+var writing = make(map[string]*HLSWriter)
+
 type HLSConfig struct {
 	config.Publish
 	config.Pull
@@ -75,9 +78,15 @@ func (c *HLSConfig) OnEvent(event any) {
 		if c.Filter != "" {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
+	case SEclose:
+		delete(writing, v.Stream.Path)
 	case SEpublish:
-		if c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path) {
-			go c.writeHLS(v.Stream)
+		if writing[v.Stream.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path)) {
+			var outStream = HLSWriter{
+				infoRing: ring.New(c.Window),
+			}
+			writing[v.Stream.Path] = &outStream
+			go outStream.Start(v.Stream)
 		}
 	case *Stream: //按需拉流
 		for streamPath, url := range c.PullOnSub {

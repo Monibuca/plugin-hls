@@ -37,6 +37,29 @@ type HLSWriter struct {
 	Subscriber
 }
 
+func (hls *HLSWriter) Start(r *Stream){
+	hls.IsInternal = true
+	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
+		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
+		return
+	}
+
+	if hls.Video.Track != nil {
+		hls.m3u8Name = r.Path + "/" + hls.Video.Track.Name
+	} else if hls.Audio.Track != nil {
+		hls.m3u8Name = r.Path + "/" + hls.Audio.Track.Name
+	}
+	memoryM3u8.Store(r.Path, hls.m3u8Name)
+	hls.PlayRaw()
+	memoryM3u8.Delete(r.Path)
+	memoryM3u8.Delete(hls.m3u8Name)
+	hls.infoRing.Do(func(i interface{}) {
+		if i != nil {
+			memoryTs.Delete(i.(PlaylistInf).FilePath)
+		}
+	})
+}
+
 func (hls *HLSWriter) OnEvent(event any) {
 	var err error
 	defer func() {
@@ -161,33 +184,4 @@ func (hls *HLSWriter) OnEvent(event any) {
 	default:
 		hls.Subscriber.OnEvent(event)
 	}
-}
-
-func (config *HLSConfig) writeHLS(r *Stream) {
-	if config.filterReg != nil && !config.filterReg.MatchString(r.Path) {
-		return
-	}
-	var outStream = &HLSWriter{
-		infoRing: ring.New(config.Window),
-	}
-	outStream.IsInternal = true
-	if err := HLSPlugin.Subscribe(r.Path, outStream); err != nil {
-		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
-		return
-	}
-
-	if outStream.Video.Track != nil {
-		outStream.m3u8Name = r.Path + "/" + outStream.Video.Track.Name
-	} else if outStream.Audio.Track != nil {
-		outStream.m3u8Name = r.Path + "/" + outStream.Audio.Track.Name
-	}
-	memoryM3u8.Store(r.Path, outStream.m3u8Name)
-	outStream.PlayRaw()
-	memoryM3u8.Delete(r.Path)
-	memoryM3u8.Delete(outStream.m3u8Name)
-	outStream.infoRing.Do(func(i interface{}) {
-		if i != nil {
-			memoryTs.Delete(i.(PlaylistInf).FilePath)
-		}
-	})
 }
