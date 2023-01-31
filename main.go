@@ -34,12 +34,12 @@ type HLSConfig struct {
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment          float64
+	Fragment          time.Duration
 	Window            int
 	Filter            string // 过滤，正则表达式
 	Path              string
-	DefaultTS         string  // 默认的ts文件
-	DefaultTSDuration float64 // 默认的ts文件时长(秒)
+	DefaultTS         string        // 默认的ts文件
+	DefaultTSDuration time.Duration // 默认的ts文件时长(秒)
 	filterReg         *regexp.Regexp
 }
 
@@ -62,13 +62,13 @@ func (c *HLSConfig) OnEvent(event any) {
 				log.Panic("read default ts error")
 			}
 		} else {
-			c.DefaultTSDuration = 3.88
+			c.DefaultTSDuration = time.Second * 388 / 100
 		}
 		if c.DefaultTSDuration == 0 {
 			log.Panic("default ts duration error")
 		} else {
 			go func() {
-				ticker := time.NewTicker(time.Duration(c.DefaultTSDuration * float64(time.Second)))
+				ticker := time.NewTicker(c.DefaultTSDuration)
 				for range ticker.C {
 					defaultSeq++
 				}
@@ -163,7 +163,7 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 #EXT-X-DISCONTINUITY-SEQUENCE:%d
 #EXT-X-DISCONTINUITY
 #EXTINF:%.3f,
-default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration)), defaultSeq, config.DefaultTSDuration)))
+default.ts`, defaultSeq, int(math.Ceil(float64(config.DefaultTSDuration/time.Second))), defaultSeq, config.DefaultTSDuration)))
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		if tsData, ok := memoryTs.Load(fileName); ok {

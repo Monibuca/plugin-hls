@@ -6,23 +6,24 @@ import (
 	. "m7s.live/engine/v4"
 	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
-	. "m7s.live/engine/v4/common"
+	"m7s.live/engine/v4/track"
 )
 
-func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice], skipTS uint32) (packet mpegts.MpegTsPESPacket, err error) {
+func VideoPacketToPES(frame *VideoFrame, vt *track.Video) (packet mpegts.MpegTsPESPacket, err error) {
 	buffer := bytes.NewBuffer([]byte{})
 	//需要对原始数据(ES),进行一些预处理,视频需要分割nalu(H264编码),并且打上sps,pps,nalu_aud信息.
-	if len(dc.Raw) == 2 {
+	if len(vt.ParamaterSets) == 2 {
 		buffer.Write(codec.NALU_AUD_BYTE)
 	} else {
 		buffer.Write(codec.AudNalu)
 	}
 	if frame.IFrame {
-		annexB := VideoDeConf(dc).GetAnnexB()
+		annexB := vt.GetAnnexB()
 		annexB.WriteTo(buffer)
 	}
 	annexB := frame.GetAnnexB()
 	annexB.WriteTo(buffer)
+
 	pktLength := buffer.Len() + 10 + 3
 	if pktLength > 0xffff {
 		pktLength = 0
@@ -46,8 +47,8 @@ func VideoPacketToPES(frame *VideoFrame, dc DecoderConfiguration[NALUSlice], ski
 	packet.Header.ConstTen = 0x80
 	packet.Header.StreamID = mpegts.STREAM_ID_VIDEO
 	packet.Header.PesPacketLength = uint16(pktLength)
-	packet.Header.Pts = uint64(frame.PTS - skipTS*90)
-	packet.Header.Dts = uint64(frame.DTS - skipTS*90)
+	packet.Header.Pts = uint64(frame.PTS)
+	packet.Header.Dts = uint64(frame.DTS)
 	packet.Header.PtsDtsFlags = 0xC0
 	packet.Header.PesHeaderDataLength = 10
 
