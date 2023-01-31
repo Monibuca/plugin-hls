@@ -101,7 +101,7 @@ func (c *HLSConfig) OnEvent(event any) {
 }
 
 var hlsConfig = &HLSConfig{
-	Fragment: 10,
+	Fragment: time.Second * 10,
 	Window:   2,
 }
 
