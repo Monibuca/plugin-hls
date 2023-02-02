@@ -99,7 +99,6 @@ func (hls *HLSWriter) OnEvent(event any) {
 			hls.pmt = buffer.Bytes()
 			hls.AddTrack(v)
 		}
-	case AudioDeConf:
 	case AudioFrame:
 		if hls.packet, err = AudioPacketToPES(&v, &hls.Audio.AudioSpecificConfig); err != nil {
 			return
@@ -120,8 +119,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 		if err != nil {
 			return
 		}
-		ts := time.Millisecond * time.Duration(v.AbsTime)
-		if v.IFrame {
+		if ts := time.Millisecond * time.Duration(v.AbsTime); v.IFrame {
 			// 当前的时间戳减去上一个ts切片的时间戳
 			if ts-hls.vwrite_time >= hls.hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
