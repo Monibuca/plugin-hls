@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -163,14 +162,12 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 #EXT-X-DISCONTINUITY-SEQUENCE:%d
 #EXT-X-DISCONTINUITY
 #EXTINF:%.3f,
-default.ts`, defaultSeq, int(math.Ceil(float64(config.DefaultTSDuration/time.Second))), defaultSeq, config.DefaultTSDuration)))
+default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration.Seconds())), defaultSeq, config.DefaultTSDuration.Seconds())))
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		if tsData, ok := memoryTs.Load(fileName); ok {
-			tsInfo := tsData.(net.Buffers)
-			var data net.Buffers
-			data = append(data, tsInfo...)
-			data.WriteTo(w)
+			tsInfo := tsData.(*MemoryTs)
+			tsInfo.WriteTo(w)
 		} else {
 			w.Write(defaultTS)
 			// w.WriteHeader(http.StatusNotFound)

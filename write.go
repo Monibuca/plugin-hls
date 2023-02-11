@@ -3,7 +3,6 @@ package hls
 import (
 	"bytes"
 	"container/ring"
-	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/track"
+	"m7s.live/engine/v4/util"
 )
 
 var memoryTs sync.Map
@@ -28,21 +28,23 @@ type HLSWriter struct {
 	hls_segment_count  uint32 // hls segment count
 	vwrite_time        time.Duration
 	video_cc, audio_cc byte
-	hls_segment_data   *bytes.Buffer
-	packet             mpegts.MpegTsPESPacket
 	vcodec             codec.VideoCodecID
 	acodec             codec.AudioCodecID
-	pmt                []byte
+	pool               util.BytesPool
+	currentTs          *MemoryTs
 	Subscriber
 }
 
 func (hls *HLSWriter) Start(r *Stream) {
 	hls.IsInternal = true
+	hls.pool = make(util.BytesPool, 17)
+	hls.currentTs = &MemoryTs{
+		BytesPool: hls.pool,
+	}
 	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
-
 	if hls.VideoReader.Track != nil {
 		hls.m3u8Name = r.Path + "/" + hls.VideoReader.Track.Name
 	} else if hls.AudioReader.Track != nil {
@@ -73,7 +75,6 @@ func (hls *HLSWriter) OnEvent(event any) {
 		} else {
 			hls.hls_fragment = time.Second * 10
 		}
-		hls.hls_segment_data = new(bytes.Buffer)
 		hls.playlist = Playlist{
 			Writer:         hls,
 			Version:        3,
@@ -86,53 +87,39 @@ func (hls *HLSWriter) OnEvent(event any) {
 
 	case *track.Video:
 		hls.vcodec = v.CodecID
-		var buffer bytes.Buffer
-		mpegts.WritePMTPacket(&buffer, hls.vcodec, hls.acodec)
-		hls.pmt = buffer.Bytes()
+		hls.currentTs.PMT.Reset()
+		mpegts.WritePMTPacket(&hls.currentTs.PMT, hls.vcodec, hls.acodec)
 		hls.AddTrack(v)
 
 	case *track.Audio:
 		if v.CodecID == codec.CodecID_AAC {
 			hls.acodec = v.CodecID
-			var buffer bytes.Buffer
-			mpegts.WritePMTPacket(&buffer, hls.vcodec, hls.acodec)
-			hls.pmt = buffer.Bytes()
+			hls.currentTs.PMT.Reset()
+			mpegts.WritePMTPacket(&hls.currentTs.PMT, hls.vcodec, hls.acodec)
 			hls.AddTrack(v)
 		}
 	case AudioFrame:
-		if hls.packet, err = AudioPacketToPES(&v, &hls.Audio.AudioSpecificConfig); err != nil {
-			return
-		}
 		pes := &mpegts.MpegtsPESFrame{
 			Pid:                       mpegts.PID_AUDIO,
 			IsKeyFrame:                false,
 			ContinuityCounter:         hls.audio_cc,
 			ProgramClockReferenceBase: uint64(v.PTS),
 		}
-		//frame.ProgramClockReferenceBase = 0
-		if err = mpegts.WritePESPacket(hls.hls_segment_data, pes, hls.packet); err != nil {
-			return
-		}
+		hls.currentTs.WriteAudioFrame(&v, &hls.Audio.AudioSpecificConfig, pes)
 		hls.audio_cc = pes.ContinuityCounter
 	case VideoFrame:
-		hls.packet, err = VideoPacketToPES(&v, hls.Video)
-		if err != nil {
-			return
-		}
 		if ts := time.Millisecond * time.Duration(v.AbsTime); v.IFrame {
 			// 当前的时间戳减去上一个ts切片的时间戳
 			if ts-hls.vwrite_time >= hls.hls_fragment {
 				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 				tsFilePath := hls.Stream.Path + "/" + tsFilename
-				memoryTs.Store(tsFilePath, net.Buffers{
-					mpegts.DefaultPATPacket,
-					hls.pmt,
-					hls.hls_segment_data.Bytes(),
-				})
-				hls.hls_segment_data = new(bytes.Buffer)
+				memoryTs.Store(tsFilePath, hls.currentTs)
+				// println(hls.currentTs.Length)
+				hls.currentTs = &MemoryTs{
+					BytesPool: hls.pool,
+				}
 				inf := PlaylistInf{
-
 					//浮点计算精度
 					Duration: (ts - hls.vwrite_time).Seconds(),
 					Title:    tsFilename,
@@ -145,7 +132,9 @@ func (hls *HLSWriter) OnEvent(event any) {
 					if err = hls.playlist.Init(); err != nil {
 						return
 					}
-					memoryTs.Delete(hls.infoRing.Value.(PlaylistInf).FilePath)
+					if mts, loaded := memoryTs.LoadAndDelete(hls.infoRing.Value.(PlaylistInf).FilePath); loaded {
+						mts.(*MemoryTs).Recycle()
+					}
 					hls.infoRing.Value = inf
 					hls.infoRing = hls.infoRing.Next()
 					hls.infoRing.Do(func(i interface{}) {
@@ -158,7 +147,6 @@ func (hls *HLSWriter) OnEvent(event any) {
 						return
 					}
 				}
-				inf.Title = tsFilename
 				hls.hls_segment_count++
 				hls.vwrite_time = ts
 				if hls.playlist.tsCount > 0 {
@@ -173,9 +161,10 @@ func (hls *HLSWriter) OnEvent(event any) {
 			ContinuityCounter:         hls.video_cc,
 			ProgramClockReferenceBase: uint64(v.PTS),
 		}
-		if err = mpegts.WritePESPacket(hls.hls_segment_data, pes, hls.packet); err != nil {
+		if err = hls.currentTs.WriteVideoFrame(&v, hls.Video.ParamaterSets, pes); err != nil {
 			return
 		}
+
 		hls.video_cc = pes.ContinuityCounter
 	default:
 		hls.Subscriber.OnEvent(event)
