@@ -1,8 +1,9 @@
 package hls
 
 import (
-	"bytes"
 	"container/ring"
+	"fmt"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -18,154 +19,222 @@ import (
 var memoryTs sync.Map
 var memoryM3u8 sync.Map
 
-type HLSWriter struct {
-	m3u8Name string
-	bytes.Buffer
+type TrackReader struct {
 	sync.RWMutex
-	playlist           Playlist
-	infoRing           *ring.Ring
-	hls_fragment       time.Duration
-	hls_segment_count  uint32 // hls segment count
-	vwrite_time        time.Duration
-	video_cc, audio_cc byte
-	vcodec             codec.VideoCodecID
-	acodec             codec.AudioCodecID
-	pool               util.BytesPool
-	currentTs          *MemoryTs
+	M3u8 util.Buffer
+	cc   byte
+	pes  *mpegts.MpegtsPESFrame
+	ts   *MemoryTs
+	track.AVRingReader
+	write_time        time.Duration
+	m3u8Name          string
+	hls_segment_count uint32 // hls segment count
+	playlist          Playlist
+	infoRing          *ring.Ring
+}
+
+func (tr *TrackReader) init(hls *HLSWriter, media *track.Media, pid uint16) {
+	tr.ts = &MemoryTs{
+		BytesPool: hls.pool,
+	}
+	tr.pes = &mpegts.MpegtsPESFrame{
+		Pid: pid,
+	}
+	tr.infoRing = ring.New(hlsConfig.Window)
+	tr.m3u8Name = hls.Stream.Path + "/" + media.Name
+	tr.AVRingReader = hls.CreateTrackReader(media)
+	tr.playlist = Playlist{
+		Writer:         &tr.M3u8,
+		Version:        3,
+		Sequence:       0,
+		Targetduration: int(hlsConfig.Fragment / time.Millisecond / 666), // hlsFragment * 1.5 / 1000
+	}
+}
+
+type AudioTrackReader struct {
+	TrackReader
+	*track.Audio
+}
+
+type VideoTrackReader struct {
+	TrackReader
+	*track.Video
+}
+
+type HLSWriter struct {
+	pool         util.BytesPool
+	audio_tracks []*AudioTrackReader
+	video_tracks []*VideoTrackReader
 	Subscriber
 }
 
 func (hls *HLSWriter) Start(r *Stream) {
 	hls.IsInternal = true
 	hls.pool = make(util.BytesPool, 17)
-	hls.currentTs = &MemoryTs{
-		BytesPool: hls.pool,
-	}
 	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
-	if hls.VideoReader.Track != nil {
-		hls.m3u8Name = r.Path + "/" + hls.VideoReader.Track.Name
-	} else if hls.AudioReader.Track != nil {
-		hls.m3u8Name = r.Path + "/" + hls.AudioReader.Track.Name
-	}
-	memoryM3u8.Store(r.Path, hls.m3u8Name)
-	hls.PlayRaw()
+	hls.ReadTrack()
 	memoryM3u8.Delete(r.Path)
-	memoryM3u8.Delete(hls.m3u8Name)
-	hls.infoRing.Do(func(i interface{}) {
-		if i != nil {
-			memoryTs.Delete(i.(PlaylistInf).FilePath)
+	for _, t := range hls.video_tracks {
+		memoryM3u8.Delete(t.m3u8Name)
+		t.infoRing.Do(func(i interface{}) {
+			if i != nil {
+				memoryTs.Delete(i.(PlaylistInf).FilePath)
+			}
+		})
+	}
+	for _, t := range hls.audio_tracks {
+		memoryM3u8.Delete(t.m3u8Name)
+		t.infoRing.Do(func(i interface{}) {
+			if i != nil {
+				memoryTs.Delete(i.(PlaylistInf).FilePath)
+			}
+		})
+	}
+}
+func (hls *HLSWriter) ReadTrack() {
+	m3u8 := `#EXTM3U
+#EXT-X-VERSION:3`
+	//TODO: g711
+	for _, t := range hls.audio_tracks {
+		if t.CodecID == codec.CodecID_AAC {
+			m3u8 += fmt.Sprintf(`
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8"`, t.Track.Name, hls.Stream.StreamName, t.Track.Name)
+			break
 		}
-	})
+	}
+	for _, t := range hls.video_tracks {
+		m3u8 += fmt.Sprintf(`
+#EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d,AUDIO="aac"
+%s/%s.m3u8`, t.Track.Name, t.Width, t.Height, hls.Stream.StreamName, t.Track.Name)
+		break
+	}
+
+	memoryM3u8.Store(hls.Stream.Path, m3u8)
+	var poolLock sync.Mutex
+	go func() {
+		for {
+			poolLock.Lock()
+			for _, t := range hls.audio_tracks {
+				err := t.Read(hls.IO, 0)
+				if err != nil {
+					poolLock.Unlock()
+					return
+				}
+				t.TrackReader.frag(hls.Stream.Path)
+				t.pes.IsKeyFrame = false
+				t.pes.ContinuityCounter = t.cc
+				t.pes.ProgramClockReferenceBase = uint64(t.Frame.PTS)
+				t.ts.WriteAudioFrame(&AudioFrame{
+					t.Frame, t.AbsTime, t.Frame.PTS - t.SkipRTPTs, t.Frame.DTS - t.SkipRTPTs,
+				}, &t.AudioSpecificConfig, t.pes)
+			}
+			poolLock.Unlock()
+		}
+	}()
+	for {
+		poolLock.Lock()
+		for _, t := range hls.video_tracks {
+			err := t.Read(hls.IO, 0)
+			if err != nil {
+				poolLock.Unlock()
+				return
+			}
+			if t.Frame.IFrame {
+				t.TrackReader.frag(hls.Stream.Path)
+			}
+			t.pes.IsKeyFrame = t.Frame.IFrame
+			t.pes.ContinuityCounter = t.cc
+			t.pes.ProgramClockReferenceBase = uint64(t.Frame.PTS)
+			t.ts.WriteVideoFrame(&VideoFrame{
+				t.Frame, t.AbsTime, t.Frame.PTS - t.SkipRTPTs, t.Frame.DTS - t.SkipRTPTs,
+			}, t.ParamaterSets, t.pes)
+		}
+		poolLock.Unlock()
+	}
+}
+
+func (t *TrackReader) frag(streamPath string) (err error) {
+	ts := time.Millisecond * time.Duration(t.AVRingReader.AbsTime)
+	// 当前的时间戳减去上一个ts切片的时间戳
+	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
+		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
+		tsFilename := t.Track.Name + strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
+		tsFilePath := streamPath + "/" + tsFilename
+		memoryTs.Store(tsFilePath, t.ts)
+		// println(hls.currentTs.Length)
+		t.ts = &MemoryTs{
+			BytesPool: t.ts.BytesPool,
+			PMT:       t.ts.PMT,
+		}
+		if t.playlist.Targetduration < int(dur.Seconds()) {
+			t.playlist.Targetduration = int(math.Ceil(dur.Seconds()))
+		}
+		if t.M3u8.Len() == 0 {
+			t.playlist.Init()
+		}
+		inf := PlaylistInf{
+			//浮点计算精度
+			Duration: dur.Seconds(),
+			Title:    tsFilename,
+			FilePath: tsFilePath,
+		}
+		t.Lock()
+		defer t.Unlock()
+		if t.hls_segment_count >= uint32(hlsConfig.Window) {
+			t.M3u8.Reset()
+			if err = t.playlist.Init(); err != nil {
+				return
+			}
+			if mts, loaded := memoryTs.LoadAndDelete(t.infoRing.Value.(PlaylistInf).FilePath); loaded {
+				mts.(*MemoryTs).Recycle()
+			}
+			t.infoRing.Value = inf
+			t.infoRing = t.infoRing.Next()
+			t.infoRing.Do(func(i interface{}) {
+				t.playlist.WriteInf(i.(PlaylistInf))
+			})
+		} else {
+			t.infoRing.Value = inf
+			t.infoRing = t.infoRing.Next()
+			if err = t.playlist.WriteInf(inf); err != nil {
+				return
+			}
+		}
+		t.hls_segment_count++
+		t.write_time = ts
+		if t.playlist.tsCount > 0 {
+			memoryM3u8.LoadOrStore(t.m3u8Name, t)
+		}
+	}
+	return
 }
 
 func (hls *HLSWriter) OnEvent(event any) {
 	var err error
 	defer func() {
 		if err != nil {
+			hls.Warn("write stop", zap.Error(err))
 			hls.Stop()
 		}
 	}()
 	switch v := event.(type) {
-	case *HLSWriter:
-		if hlsConfig.Fragment > 0 {
-			hls.hls_fragment = hlsConfig.Fragment
-		} else {
-			hls.hls_fragment = time.Second * 10
-		}
-		hls.playlist = Playlist{
-			Writer:         hls,
-			Version:        3,
-			Sequence:       0,
-			Targetduration: int(hls.hls_fragment / time.Millisecond / 666), // hlsFragment * 1.5 / 1000
-		}
-		if err = hls.playlist.Init(); err != nil {
-			return
-		}
-
 	case *track.Video:
-		hls.vcodec = v.CodecID
-		hls.currentTs.PMT.Reset()
-		mpegts.WritePMTPacket(&hls.currentTs.PMT, hls.vcodec, hls.acodec)
-		hls.AddTrack(v)
-
+		track := &VideoTrackReader{
+			Video: v,
+		}
+		track.init(hls, &v.Media, mpegts.PID_VIDEO)
+		track.ts.WritePMTPacket(0, v.CodecID)
+		hls.video_tracks = append(hls.video_tracks, track)
 	case *track.Audio:
-		if v.CodecID == codec.CodecID_AAC {
-			hls.acodec = v.CodecID
-			hls.currentTs.PMT.Reset()
-			mpegts.WritePMTPacket(&hls.currentTs.PMT, hls.vcodec, hls.acodec)
-			hls.AddTrack(v)
+		track := &AudioTrackReader{
+			Audio: v,
 		}
-	case AudioFrame:
-		pes := &mpegts.MpegtsPESFrame{
-			Pid:                       mpegts.PID_AUDIO,
-			IsKeyFrame:                false,
-			ContinuityCounter:         hls.audio_cc,
-			ProgramClockReferenceBase: uint64(v.PTS),
-		}
-		hls.currentTs.WriteAudioFrame(&v, &hls.Audio.AudioSpecificConfig, pes)
-		hls.audio_cc = pes.ContinuityCounter
-	case VideoFrame:
-		if ts := time.Millisecond * time.Duration(v.AbsTime); v.IFrame {
-			// 当前的时间戳减去上一个ts切片的时间戳
-			if ts-hls.vwrite_time >= hls.hls_fragment {
-				//fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
-				tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
-				tsFilePath := hls.Stream.Path + "/" + tsFilename
-				memoryTs.Store(tsFilePath, hls.currentTs)
-				// println(hls.currentTs.Length)
-				hls.currentTs = &MemoryTs{
-					BytesPool: hls.pool,
-				}
-				inf := PlaylistInf{
-					//浮点计算精度
-					Duration: (ts - hls.vwrite_time).Seconds(),
-					Title:    tsFilename,
-					FilePath: tsFilePath,
-				}
-				hls.Lock()
-				defer hls.Unlock()
-				if hls.hls_segment_count >= uint32(hlsConfig.Window) {
-					hls.Reset()
-					if err = hls.playlist.Init(); err != nil {
-						return
-					}
-					if mts, loaded := memoryTs.LoadAndDelete(hls.infoRing.Value.(PlaylistInf).FilePath); loaded {
-						mts.(*MemoryTs).Recycle()
-					}
-					hls.infoRing.Value = inf
-					hls.infoRing = hls.infoRing.Next()
-					hls.infoRing.Do(func(i interface{}) {
-						hls.playlist.WriteInf(i.(PlaylistInf))
-					})
-				} else {
-					hls.infoRing.Value = inf
-					hls.infoRing = hls.infoRing.Next()
-					if err = hls.playlist.WriteInf(inf); err != nil {
-						return
-					}
-				}
-				hls.hls_segment_count++
-				hls.vwrite_time = ts
-				if hls.playlist.tsCount > 0 {
-					memoryM3u8.LoadOrStore(hls.m3u8Name, hls)
-				}
-			}
-		}
-
-		pes := &mpegts.MpegtsPESFrame{
-			Pid:                       mpegts.PID_VIDEO,
-			IsKeyFrame:                v.IFrame,
-			ContinuityCounter:         hls.video_cc,
-			ProgramClockReferenceBase: uint64(v.PTS),
-		}
-		if err = hls.currentTs.WriteVideoFrame(&v, hls.Video.ParamaterSets, pes); err != nil {
-			return
-		}
-
-		hls.video_cc = pes.ContinuityCounter
+		track.init(hls, &v.Media, mpegts.PID_AUDIO)
+		track.ts.WritePMTPacket(v.CodecID, 0)
+		hls.audio_tracks = append(hls.audio_tracks, track)
 	default:
 		hls.Subscriber.OnEvent(event)
 	}

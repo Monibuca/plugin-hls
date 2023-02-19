@@ -2,7 +2,6 @@ package hls // import "m7s.live/plugin/hls/v4"
 
 import (
 	"compress/gzip"
-	"container/ring"
 	"context"
 	_ "embed"
 	"fmt"
@@ -28,14 +27,16 @@ import (
 var defaultTS []byte
 var defaultSeq = 0 // 默认片头的全局序号
 var writing = make(map[string]*HLSWriter)
+var hlsConfig HLSConfig
+var HLSPlugin = InstallPlugin(&hlsConfig)
 
 type HLSConfig struct {
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment          time.Duration
-	Window            int
-	Filter            string // 过滤，正则表达式
+	Fragment          time.Duration `default:"2s"`
+	Window            int           `default:"5"`
+	Filter            string        // 过滤，正则表达式
 	Path              string
 	DefaultTS         string        // 默认的ts文件
 	DefaultTSDuration time.Duration // 默认的ts文件时长(秒)
@@ -81,9 +82,7 @@ func (c *HLSConfig) OnEvent(event any) {
 		delete(writing, v.Stream.Path)
 	case SEpublish:
 		if writing[v.Stream.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path)) {
-			var outStream = HLSWriter{
-				infoRing: ring.New(c.Window),
-			}
+			var outStream HLSWriter
 			writing[v.Stream.Path] = &outStream
 			go outStream.Start(v.Stream)
 		}
@@ -97,11 +96,6 @@ func (c *HLSConfig) OnEvent(event any) {
 			}
 		}
 	}
-}
-
-var hlsConfig = &HLSConfig{
-	Fragment: time.Second * 10,
-	Window:   2,
 }
 
 func (config *HLSConfig) API_List(w http.ResponseWriter, r *http.Request) {
@@ -137,22 +131,24 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")
 		if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
 			switch hls := v.(type) {
-			case *HLSWriter:
+			case *TrackReader:
 				hls.RLock()
-				w.Write(hls.Bytes())
+				w.Write(hls.M3u8)
 				hls.RUnlock()
 				return
 			case string:
-				if _, ok := memoryM3u8.Load(hls); ok {
-					ss := strings.Split(hls, "/")
-					m3u8 := fmt.Sprintf(`#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-STREAM-INF:BANDWIDTH=2560000
-%s/%s.m3u8
-					`, ss[len(ss)-2], ss[len(ss)-1])
-					w.Write([]byte(m3u8))
-					return
-				}
+				w.Write([]byte(hls))
+				return
+				// 				if _, ok := memoryM3u8.Load(hls); ok {
+				// 					ss := strings.Split(hls, "/")
+				// 					m3u8 := fmt.Sprintf(`#EXTM3U
+				// #EXT-X-VERSION:3
+				// #EXT-X-STREAM-INF:BANDWIDTH=2560000
+				// %s/%s.m3u8
+				// 					`, ss[len(ss)-2], ss[len(ss)-1])
+				// 					w.Write([]byte(m3u8))
+				// 					return
+				// 				}
 			}
 		}
 		w.Write([]byte(fmt.Sprintf(`#EXTM3U
@@ -174,8 +170,6 @@ default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration.Seconds())), def
 		}
 	}
 }
-
-var HLSPlugin = InstallPlugin(hlsConfig)
 
 // HLSPuller HLS拉流者
 type HLSPuller struct {
