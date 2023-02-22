@@ -35,7 +35,7 @@ type HLSConfig struct {
 	config.Pull
 	config.Subscribe
 	Fragment          time.Duration `default:"2s"`
-	Window            int           `default:"5"`
+	Window            int           `default:"3"`
 	Filter            string        // 过滤，正则表达式
 	Path              string
 	DefaultTS         string        // 默认的ts文件

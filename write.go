@@ -22,7 +22,6 @@ var memoryM3u8 sync.Map
 type TrackReader struct {
 	sync.RWMutex
 	M3u8 util.Buffer
-	cc   byte
 	pes  *mpegts.MpegtsPESFrame
 	ts   *MemoryTs
 	track.AVRingReader
@@ -95,69 +94,70 @@ func (hls *HLSWriter) Start(r *Stream) {
 	}
 }
 func (hls *HLSWriter) ReadTrack() {
-	m3u8 := `#EXTM3U
-#EXT-X-VERSION:3`
+	var defaultAudio *AudioTrackReader
+	var defaultVideo *VideoTrackReader
+	for _, t := range hls.video_tracks {
+		if defaultVideo == nil {
+			defaultVideo = t
+		}
+		t.Ring = t.IDRing
+	}
 	//TODO: g711
 	for _, t := range hls.audio_tracks {
-		if t.CodecID == codec.CodecID_AAC {
-			m3u8 += fmt.Sprintf(`
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8"`, t.Track.Name, hls.Stream.StreamName, t.Track.Name)
-			break
+		if t.CodecID == codec.CodecID_AAC && defaultAudio == nil {
+			defaultAudio = t
 		}
+		for defaultVideo != nil && t.IDRing == nil {
+			time.Sleep(time.Millisecond * 10)
+		}
+		t.Ring = t.IDRing
 	}
-	for _, t := range hls.video_tracks {
+	m3u8 := `#EXTM3U
+#EXT-X-VERSION:3`
+	if defaultAudio != nil {
 		m3u8 += fmt.Sprintf(`
-#EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d,AUDIO="aac"
-%s/%s.m3u8`, t.Track.Name, t.Width, t.Height, hls.Stream.StreamName, t.Track.Name)
-		break
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8"`, defaultAudio.Track.Name, hls.Stream.StreamName, defaultAudio.Track.Name)
 	}
-
+	if defaultVideo != nil {
+		m3u8 += fmt.Sprintf(`
+#EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d,AUDIO="audio"
+%s/%s.m3u8`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, hls.Stream.StreamName, defaultVideo.Track.Name)
+	}
+	// 存一个默认的m3u8
 	memoryM3u8.Store(hls.Stream.Path, m3u8)
-	var poolLock sync.Mutex
-	go func() {
-		for {
-			poolLock.Lock()
-			for _, t := range hls.audio_tracks {
-				err := t.Read(hls.IO, 0)
-				if err != nil {
-					poolLock.Unlock()
-					return
-				}
-				t.TrackReader.frag(hls.Stream.Path)
-				t.pes.IsKeyFrame = false
-				t.pes.ContinuityCounter = t.cc
-				t.pes.ProgramClockReferenceBase = uint64(t.Frame.PTS)
-				t.ts.WriteAudioFrame(&AudioFrame{
-					t.Frame, t.AbsTime, t.Frame.PTS - t.SkipRTPTs, t.Frame.DTS - t.SkipRTPTs,
-				}, &t.AudioSpecificConfig, t.pes)
-			}
-			poolLock.Unlock()
-		}
-	}()
-	for {
-		poolLock.Lock()
+	for hls.IO.Err() == nil {
 		for _, t := range hls.video_tracks {
-			err := t.Read(hls.IO, 0)
-			if err != nil {
-				poolLock.Unlock()
-				return
+			for {
+				frame := t.TryRead()
+				if frame == nil {
+					break
+				}
+				if frame.IFrame {
+					t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
+				}
+				t.pes.IsKeyFrame = frame.IFrame
+				t.ts.WriteVideoFrame(&VideoFrame{frame, frame.AbsTime, frame.PTS, frame.DTS}, t.ParamaterSets, t.pes)
+				t.MoveNext()
 			}
-			if t.Frame.IFrame {
-				t.TrackReader.frag(hls.Stream.Path)
-			}
-			t.pes.IsKeyFrame = t.Frame.IFrame
-			t.pes.ContinuityCounter = t.cc
-			t.pes.ProgramClockReferenceBase = uint64(t.Frame.PTS)
-			t.ts.WriteVideoFrame(&VideoFrame{
-				t.Frame, t.AbsTime, t.Frame.PTS - t.SkipRTPTs, t.Frame.DTS - t.SkipRTPTs,
-			}, t.ParamaterSets, t.pes)
 		}
-		poolLock.Unlock()
+		for _, t := range hls.audio_tracks {
+			for {
+				frame := t.TryRead()
+				if frame == nil {
+					break
+				}
+				t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
+				t.pes.IsKeyFrame = false
+				t.ts.WriteAudioFrame(&AudioFrame{frame, frame.AbsTime, frame.PTS, frame.DTS}, &t.AudioSpecificConfig, t.pes)
+				t.MoveNext()
+			}
+		}
+		time.Sleep(time.Millisecond * 10)
 	}
 }
 
-func (t *TrackReader) frag(streamPath string) (err error) {
-	ts := time.Millisecond * time.Duration(t.AVRingReader.AbsTime)
+func (t *TrackReader) frag(streamPath string, absTime uint32) (err error) {
+	ts := time.Millisecond * time.Duration(absTime)
 	// 当前的时间戳减去上一个ts切片的时间戳
 	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
 		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
