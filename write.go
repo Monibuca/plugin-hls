@@ -112,16 +112,18 @@ func (hls *HLSWriter) ReadTrack() {
 		}
 		t.Ring = t.IDRing
 	}
+	var audioGroup string
 	m3u8 := `#EXTM3U
 #EXT-X-VERSION:3`
 	if defaultAudio != nil {
+		audioGroup = `,AUDIO="audio"`
 		m3u8 += fmt.Sprintf(`
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8"`, defaultAudio.Track.Name, hls.Stream.StreamName, defaultAudio.Track.Name)
 	}
 	if defaultVideo != nil {
 		m3u8 += fmt.Sprintf(`
-#EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d,AUDIO="audio"
-%s/%s.m3u8`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, hls.Stream.StreamName, defaultVideo.Track.Name)
+#EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d%s
+%s/%s.m3u8`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, audioGroup, hls.Stream.StreamName, defaultVideo.Track.Name)
 	}
 	// 存一个默认的m3u8
 	memoryM3u8.Store(hls.Stream.Path, m3u8)
@@ -136,7 +138,7 @@ func (hls *HLSWriter) ReadTrack() {
 					t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
 				}
 				t.pes.IsKeyFrame = frame.IFrame
-				t.ts.WriteVideoFrame(&VideoFrame{frame, frame.AbsTime, frame.PTS, frame.DTS}, t.ParamaterSets, t.pes)
+				t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, frame.AbsTime, frame.PTS, frame.DTS}, t.pes)
 				t.MoveNext()
 			}
 		}
@@ -148,7 +150,7 @@ func (hls *HLSWriter) ReadTrack() {
 				}
 				t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
 				t.pes.IsKeyFrame = false
-				t.ts.WriteAudioFrame(&AudioFrame{frame, frame.AbsTime, frame.PTS, frame.DTS}, &t.AudioSpecificConfig, t.pes)
+				t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, frame.AbsTime, frame.PTS, frame.DTS}, t.pes)
 				t.MoveNext()
 			}
 		}
