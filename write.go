@@ -10,7 +10,6 @@ import (
 
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
-	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/track"
 	"m7s.live/engine/v4/util"
@@ -103,9 +102,8 @@ func (hls *HLSWriter) ReadTrack() {
 			hls.defaultVideo = t
 		}
 	}
-	//TODO: g711
 	for _, t := range hls.audio_tracks {
-		if t.CodecID == codec.CodecID_AAC && defaultAudio == nil {
+		if defaultAudio == nil {
 			defaultAudio = t
 		}
 	}
