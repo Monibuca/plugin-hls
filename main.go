@@ -31,6 +31,7 @@ var hlsConfig HLSConfig
 var HLSPlugin = InstallPlugin(&hlsConfig)
 
 type HLSConfig struct {
+	config.HTTP
 	config.Publish
 	config.Pull
 	config.Subscribe

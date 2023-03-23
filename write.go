@@ -130,10 +130,10 @@ func (hls *HLSWriter) ReadTrack() {
 					break
 				}
 				if frame.IFrame {
-					t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
+					t.TrackReader.frag(hls.Stream.Path, frame.Timestamp)
 				}
 				t.pes.IsKeyFrame = frame.IFrame
-				t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, frame.AbsTime, frame.PTS, frame.DTS}, t.pes)
+				t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
 				t.MoveNext()
 			}
 		}
@@ -143,9 +143,9 @@ func (hls *HLSWriter) ReadTrack() {
 				if frame == nil {
 					break
 				}
-				t.TrackReader.frag(hls.Stream.Path, frame.AbsTime)
+				t.TrackReader.frag(hls.Stream.Path, frame.Timestamp)
 				t.pes.IsKeyFrame = false
-				t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, frame.AbsTime, frame.PTS, frame.DTS}, t.pes)
+				t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
 				t.MoveNext()
 			}
 		}
@@ -153,8 +153,7 @@ func (hls *HLSWriter) ReadTrack() {
 	}
 }
 
-func (t *TrackReader) frag(streamPath string, absTime uint32) (err error) {
-	ts := time.Millisecond * time.Duration(absTime)
+func (t *TrackReader) frag(streamPath string, ts time.Duration) (err error) {
 	// 当前的时间戳减去上一个ts切片的时间戳
 	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
 		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
