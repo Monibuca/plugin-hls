@@ -80,12 +80,12 @@ func (c *HLSConfig) OnEvent(event any) {
 			c.filterReg = regexp.MustCompile(c.Filter)
 		}
 	case SEclose:
-		delete(writing, v.Stream.Path)
+		delete(writing, v.Target.Path)
 	case SEpublish:
-		if writing[v.Stream.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Stream.Path)) {
+		if writing[v.Target.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Target.Path)) {
 			var outStream HLSWriter
-			writing[v.Stream.Path] = &outStream
-			go outStream.Start(v.Stream)
+			writing[v.Target.Path] = &outStream
+			go outStream.Start(v.Target)
 		}
 	case *Stream: //按需拉流
 		for streamPath, url := range c.PullOnSub {
