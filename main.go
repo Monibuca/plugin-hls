@@ -216,6 +216,7 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 		defer close(tsbuffer)
 		p.Stop()
 	}()
+	var maxResolution *m3u8.PlaylistItem
 	for errcount := 0; err == nil; resp, err = client.Do(req) {
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
@@ -236,6 +237,10 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 			discontinuity := false
 			for _, item := range playlist.Items {
 				switch v := item.(type) {
+				case *m3u8.PlaylistItem:
+					if (maxResolution == nil || maxResolution.Resolution != nil && (maxResolution.Resolution.Width < v.Resolution.Width || maxResolution.Resolution.Height < v.Resolution.Height)) || maxResolution.Bandwidth < v.Bandwidth {
+						maxResolution = v
+					}
 				case *m3u8.DiscontinuityItem:
 					discontinuity = true
 				case *m3u8.SegmentItem:
@@ -244,6 +249,25 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 						continue
 					}
 					tsItems = append(tsItems, v)
+				case *m3u8.MediaItem:
+					if p.Audio.Req == nil {
+						if url, err := req.URL.Parse(*v.URI); err == nil {
+							newReq, _ := http.NewRequest("GET", url.String(), nil)
+							newReq.Header = req.Header
+							p.Audio.Req = newReq
+							go p.pull(&p.Audio)
+						}
+					}
+				}
+			}
+			if maxResolution != nil && len(tsItems) == 0 {
+				if url, err := req.URL.Parse(maxResolution.URI); err == nil {
+					if strings.HasSuffix(url.Path, ".m3u8") {
+						p.Video.Req, _ = http.NewRequest("GET", url.String(), nil)
+						p.Video.Req.Header = req.Header
+						req = p.Video.Req
+						continue
+					}
 				}
 			}
 			HLSPlugin.Debug("readM3U8", zap.Int("sequence", sequence), zap.Int("tscount", len(tsItems)))
@@ -290,8 +314,5 @@ func (p *HLSPuller) Connect() (err error) {
 }
 
 func (p *HLSPuller) Pull() error {
-	if p.Audio.Req != nil {
-		go p.pull(&p.Audio)
-	}
 	return p.pull(&p.Video)
 }
