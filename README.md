@@ -27,33 +27,29 @@ import (
 - publish 和 subscribe 配置会覆盖全局配置
 ```yaml
 hls:
-    publish:
-        pubaudio: true # 是否发布音频流
-        pubvideo: true # 是否发布视频流
-        kickexist: false # 剔出已经存在的发布者，用于顶替原有发布者
-        publishtimeout: 10s # 发布流默认过期时间，超过该时间发布者没有恢复流将被删除
-        delayclosetimeout: 0 # 自动关闭触发后延迟的时间(期间内如果有新的订阅则取消触发关闭)，0为关闭该功能，保持连接。
-        waitclosetimeout: 0 # 发布者断开后等待时间，超过该时间发布者没有恢复流将被删除，0为关闭该功能，由订阅者决定是否删除
-        buffertime: 0 # 缓存时间，用于时光回溯，0为关闭缓存
-    subscribe:
-        subaudio: true # 是否订阅音频流
-        subvideo: true # 是否订阅视频流
-        subaudioargname: ats # 订阅音频轨道参数名
-        subvideoargname: vts # 订阅视频轨道参数名
-        subdataargname: dts # 订阅数据轨道参数名
-        subaudiotracks: [] # 订阅音频轨道名称列表
-        subvideotracks: [] # 订阅视频轨道名称列表
-        submode: 0 # 订阅模式，0为跳帧追赶模式，1为不追赶（多用于录制），2为时光回溯模式
-        iframeonly: false # 只订阅关键帧
-        waittimeout: 10s # 等待发布者的超时时间，用于订阅尚未发布的流
-    pull:
-        repull: 0
-        pullonstart: {} # 服务启动时自动拉流
-        pullonsub: {} # 订阅时自动拉流(按需拉流)
+    publish: # 格式参考全局配置
+    subscribe: # 格式参考全局配置
+    pull: # 格式 https://m7s.live/guide/config.html#%E6%8F%92%E4%BB%B6%E9%85%8D%E7%BD%AE
     fragment: 10s # TS分片长度
     window: 2 # 实时流m3u8文件包含的TS文件数
     filter: "" # 正则表达式，用来过滤发布的流，只有匹配到的流才会写入
     path: "" # 远端拉流如果需要保存的话，存放的目录
     defaultts: "" # 默认切片用于无流时片头播放,如果留空则使用系统内置
     defaulttsduration: 3.88s # 默认切片的长度
+    relaymode: 0 # 转发模式,0:转协议+不转发,1:不转协议+转发，2:转协议+转发
+```
+
+## 转发模式
+转发模式仅仅对从远端拉流的hls起作用。
+
+relaymode 可以配置不同的转发模式
+
+其中，转协议意味着hls可以拉流可以转换成其他协议格式，即需要对hls的数据进行解析，
+转发意味着hls中的ts文件缓存在服务器，可以在从服务器拉流时直接读取ts文件。
+
+例如，如果希望只做hls的纯转发，减少cpu消耗，可以配置
+  
+```yaml
+hls:
+  relaymode: 1
 ```
