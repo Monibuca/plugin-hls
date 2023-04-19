@@ -229,8 +229,8 @@ func (p *HLSPuller) OnEvent(event any) {
 			close(p.PESChan)
 		} else {
 			for {
-				if p.tsDataTrack.LastValue != nil {
-					memoryTs.Delete(p.tsDataTrack.LastValue)
+				if p.tsDataTrack.LastValue.Value != nil {
+					memoryTs.Delete(p.tsDataTrack.LastValue.Value)
 				} else {
 					break
 				}
@@ -242,7 +242,7 @@ func (p *HLSPuller) OnEvent(event any) {
 		p.Publisher.OnEvent(event)
 	}
 }
-func (p *HLSPuller) pull(info *M3u8Info) error {
+func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 	//请求失败自动退出
 	req := info.Req.WithContext(p.Context)
 	client := http.DefaultClient
@@ -260,14 +260,17 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 	sequence := -1
 	lastTs := make(map[string]bool)
 	tsbuffer := make(chan io.ReadCloser)
-	resp, err := client.Do(req)
 	defer func() {
 		HLSPlugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 		defer close(tsbuffer)
 		p.Stop()
 	}()
 	var maxResolution *m3u8.PlaylistItem
-	for errcount := 0; err == nil; resp, err = client.Do(req) {
+	for errcount := 0; err == nil; err = p.Err() {
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
@@ -335,6 +338,9 @@ func (p *HLSPuller) pull(info *M3u8Info) error {
 				relayPlayList.Init()
 			}
 			for _, v := range tsItems {
+				if p.Err() != nil {
+					return p.Err()
+				}
 				tsUrl, _ := info.Req.URL.Parse(v.Segment)
 				tsReq, _ := http.NewRequestWithContext(p.Context, "GET", tsUrl.String(), nil)
 				tsReq.Header = p.TsHead
