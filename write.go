@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/codec"
 	"m7s.live/engine/v4/codec/mpegts"
 	"m7s.live/engine/v4/track"
 	"m7s.live/engine/v4/util"
@@ -226,6 +227,9 @@ func (hls *HLSWriter) OnEvent(event any) {
 		track.Ring = track.IDRing
 		hls.video_tracks = append(hls.video_tracks, track)
 	case *track.Audio:
+		if v.CodecID != codec.CodecID_AAC {
+			return
+		}
 		track := &AudioTrackReader{
 			Audio: v,
 		}
