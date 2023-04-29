@@ -69,7 +69,6 @@ type HLSWriter struct {
 }
 
 func (hls *HLSWriter) Start(r *Stream) {
-	hls.IsInternal = true
 	hls.pool = make(util.BytesPool, 17)
 	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))

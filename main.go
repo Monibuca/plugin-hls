@@ -28,12 +28,17 @@ import (
 
 //go:embed default.ts
 var defaultTS []byte
+//go:embed default.yaml
+var defaultYaml DefaultYaml
 var defaultSeq = 0 // 默认片头的全局序号
 var writing = make(map[string]*HLSWriter)
-var hlsConfig HLSConfig
-var HLSPlugin = InstallPlugin(&hlsConfig)
+var hlsConfig = &HLSConfig{
+	DefaultYaml: defaultYaml,
+}
+var HLSPlugin = InstallPlugin(hlsConfig)
 
 type HLSConfig struct {
+	DefaultYaml
 	config.HTTP
 	config.Publish
 	config.Pull
