@@ -24,7 +24,7 @@ type TrackReader struct {
 	M3u8 util.Buffer
 	pes  *mpegts.MpegtsPESFrame
 	ts   *MemoryTs
-	track.AVRingReader
+	*track.AVRingReader
 	write_time        time.Duration
 	m3u8Name          string
 	hls_segment_count uint32 // hls segment count
