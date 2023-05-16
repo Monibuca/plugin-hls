@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/quangngotan95/go-m3u8 v0.1.0
 	go.uber.org/zap v1.23.0
-	m7s.live/engine/v4 v4.12.6
+	m7s.live/engine/v4 v4.12.9
 )
 
 require (

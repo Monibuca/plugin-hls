@@ -21,6 +21,7 @@ import (
 	"github.com/quangngotan95/go-m3u8/m3u8"
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
+	"m7s.live/engine/v4/common"
 	"m7s.live/engine/v4/config"
 	"m7s.live/engine/v4/track"
 	"m7s.live/engine/v4/util"
@@ -28,6 +29,7 @@ import (
 
 //go:embed default.ts
 var defaultTS []byte
+
 //go:embed default.yaml
 var defaultYaml DefaultYaml
 var defaultSeq = 0 // 默认片头的全局序号
@@ -193,9 +195,9 @@ type HLSPuller struct {
 	Puller
 	Video       M3u8Info
 	Audio       M3u8Info
-	TsHead      http.Header     `json:"-" yaml:"-"` //用于提供cookie等特殊身份的http头
-	SaveContext context.Context `json:"-" yaml:"-"` //用来保存ts文件到服务器
-	tsDataTrack *track.Data     `json:"-" yaml:"-"` //用来缓存ts数据，用于转发
+	TsHead      http.Header         `json:"-" yaml:"-"` //用于提供cookie等特殊身份的http头
+	SaveContext context.Context     `json:"-" yaml:"-"` //用来保存ts文件到服务器
+	tsDataTrack *track.Data[string] `json:"-" yaml:"-"` //用来缓存ts数据，用于转发
 }
 
 // M3u8Info m3u8文件的信息，用于拉取m3u8文件，和提供查询
@@ -225,21 +227,19 @@ func (p *HLSPuller) OnEvent(event any) {
 		p.TSPublisher.OnEvent(event)
 		if hlsConfig.RelayMode == 1 {
 			close(p.PESChan)
-			p.tsDataTrack = p.Stream.NewDataTrack("ts", &sync.Mutex{})
+			p.tsDataTrack = track.NewDataTrack[string]("ts")
+			p.tsDataTrack.Locker = &sync.Mutex{}
 			p.tsDataTrack.Reduce(6)
-			p.tsDataTrack.Attach()
+			p.tsDataTrack.Attach(p.Stream)
 		}
 	case SEKick, SEclose:
 		if hlsConfig.RelayMode != 1 {
 			close(p.PESChan)
 		} else {
 			for {
-				if p.tsDataTrack.LastValue.Value != nil {
-					memoryTs.Delete(p.tsDataTrack.LastValue.Value)
-				} else {
-					break
-				}
-				p.tsDataTrack.Push(nil)
+				p.tsDataTrack.Do(func(f *common.LockFrame[string]) {
+					memoryTs.Delete(f.Value)
+				})
 			}
 		}
 		p.Publisher.OnEvent(event)
