@@ -276,6 +276,7 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 		if err != nil {
 			return err
 		}
+		req = resp.Request
 		if playlist, err := readM3U8(resp); err == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
