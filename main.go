@@ -102,12 +102,9 @@ func (c *HLSConfig) OnEvent(event any) {
 			}
 		}
 	case *Stream: //按需拉流
-		for streamPath, url := range c.PullOnSub {
-			if streamPath == v.Path {
-				if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), 0); err != nil {
-					HLSPlugin.Error("pull", zap.String("streamPath", streamPath), zap.String("url", url), zap.Error(err))
-				}
-				break
+		if url, ok := c.PullOnSub[v.Path]; ok {
+			if err := HLSPlugin.Pull(v.Path, url, new(HLSPuller), 0); err != nil {
+				HLSPlugin.Error("pull", zap.String("streamPath", v.Path), zap.String("url", url), zap.Error(err))
 			}
 		}
 	}
