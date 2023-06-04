@@ -3,7 +3,7 @@ package hls // import "m7s.live/plugin/hls/v4"
 import (
 	"compress/gzip"
 	"context"
-	_ "embed"
+	"embed"
 	"fmt"
 	"io"
 	"log"
@@ -11,21 +11,22 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/quangngotan95/go-m3u8/m3u8"
 	"go.uber.org/zap"
 	. "m7s.live/engine/v4"
-	"m7s.live/engine/v4/common"
 	"m7s.live/engine/v4/config"
-	"m7s.live/engine/v4/track"
 	"m7s.live/engine/v4/util"
 )
+
+//go:embed hls.js
+var hls_js embed.FS
 
 //go:embed default.ts
 var defaultTS []byte
@@ -94,8 +95,7 @@ func (c *HLSConfig) OnEvent(event any) {
 		delete(writing, v.Target.Path)
 	case SEpublish:
 		if writing[v.Target.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Target.Path)) {
-			if _, ok := v.Target.Publisher.(*HLSPuller); ok && hlsConfig.RelayMode != 0 {
-			} else {
+			if _, ok := v.Target.Publisher.(*HLSPuller); !ok || hlsConfig.RelayMode == 0 {
 				var outStream HLSWriter
 				writing[v.Target.Path] = &outStream
 				go outStream.Start(v.Target)
@@ -172,17 +172,40 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration.Seconds())), defaultSeq, config.DefaultTSDuration.Seconds())))
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
-		if tsData, ok := memoryTs.Load(fileName); ok {
+		streamPath := path.Dir(fileName)
+		tsData := memoryTs.Get(streamPath)
+		if tsData == nil {
+			tsData = memoryTs.Get(path.Dir(streamPath))
+			if tsData == nil {
+				w.Write(defaultTS)
+				return
+			}
+		}
+		if tsData := tsData.Get(fileName); tsData != nil {
 			switch v := tsData.(type) {
 			case *MemoryTs:
 				v.WriteTo(w)
-			case util.Buffer:
-				w.Write(v)
+			case *util.ListItem[util.Buffer]:
+				w.Write(v.Value)
 			}
 		} else {
 			w.Write(defaultTS)
-			// w.WriteHeader(http.StatusNotFound)
 		}
+	} else {
+		f, err := hls_js.ReadFile("hls.js/" + fileName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			w.Write(f)
+		}
+		// if file, err := hls_js.Open(fileName); err == nil {
+		// 	defer file.Close()
+		// 	if info, err := file.Stat(); err == nil {
+		// 		http.ServeContent(w, r, fileName, info.ModTime(), file)
+		// 	}
+		// } else {
+		// 	http.NotFound(w, r)
+		// }
 	}
 }
 
@@ -192,9 +215,9 @@ type HLSPuller struct {
 	Puller
 	Video       M3u8Info
 	Audio       M3u8Info
-	TsHead      http.Header         `json:"-" yaml:"-"` //用于提供cookie等特殊身份的http头
-	SaveContext context.Context     `json:"-" yaml:"-"` //用来保存ts文件到服务器
-	tsDataTrack *track.Data[string] `json:"-" yaml:"-"` //用来缓存ts数据，用于转发
+	TsHead      http.Header     `json:"-" yaml:"-"` //用于提供cookie等特殊身份的http头
+	SaveContext context.Context `json:"-" yaml:"-"` //用来保存ts文件到服务器
+	memoryTs    util.Map[string, util.Recyclable]
 }
 
 // M3u8Info m3u8文件的信息，用于拉取m3u8文件，和提供查询
@@ -222,22 +245,19 @@ func (p *HLSPuller) OnEvent(event any) {
 	switch event.(type) {
 	case IPublisher:
 		p.TSPublisher.OnEvent(event)
+		// 不转协议
 		if hlsConfig.RelayMode == 1 {
 			close(p.PESChan)
-			p.tsDataTrack = track.NewDataTrack[string]("ts")
-			p.tsDataTrack.Locker = &sync.Mutex{}
-			p.tsDataTrack.Reduce(6)
-			p.tsDataTrack.Attach(p.Stream)
+		}
+		if hlsConfig.RelayMode != 0 {
+			p.Stream.NeverTimeout = true
+			memoryTs.Add(p.StreamPath, &p.memoryTs)
 		}
 	case SEKick, SEclose:
 		if hlsConfig.RelayMode != 1 {
 			close(p.PESChan)
 		} else {
-			for {
-				p.tsDataTrack.Do(func(f *common.LockFrame[string]) {
-					memoryTs.Delete(f.Value)
-				})
-			}
+			memoryTs.Delete(p.StreamPath)
 		}
 		p.Publisher.OnEvent(event)
 	default:
@@ -262,6 +282,8 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 	sequence := -1
 	lastTs := make(map[string]bool)
 	tsbuffer := make(chan io.ReadCloser)
+	bytesPool := make(util.BytesPool, 30)
+	tsRing := util.NewRing[string](6)
 	defer func() {
 		HLSPlugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
 		defer close(tsbuffer)
@@ -359,10 +381,18 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 							p.Closer = f
 						}
 					}
-					var tsBytes util.Buffer
+					var tsBytes util.LimitBuffer
+					var item *util.ListItem[util.Buffer]
+					// 包含转发
+					if hlsConfig.RelayMode != 0 {
+						item = bytesPool.Get(int(tsRes.ContentLength))
+						tsBytes.Buffer = item.Value[:0]
+					}
+					// 双转
 					if hlsConfig.RelayMode == 2 {
 						p.SetIO(io.TeeReader(p.Reader, &tsBytes))
 					}
+					// 包含转协议
 					if hlsConfig.RelayMode != 1 {
 						p.Feed(p)
 					} else {
@@ -377,11 +407,18 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 							FilePath: tsFilePath,
 						}
 						relayPlayList.WriteInf(plInfo)
-						memoryTs.Store(plInfo.FilePath, tsBytes)
-						if p.tsDataTrack.LastValue != nil {
-							memoryTs.Delete(p.tsDataTrack.LastValue)
+						p.memoryTs.Add(tsFilePath, item)
+						next := tsRing.Next()
+						if next.Value != "" {
+							item, _ := p.memoryTs.Delete(next.Value)
+							if item == nil {
+								p.Warn("memoryTs delete nil", zap.String("streamPath", p.Stream.Path), zap.String("tsFilePath", next.Value))
+							} else {
+								item.(*util.ListItem[util.Buffer]).Recycle()
+							}
 						}
-						p.tsDataTrack.Push(plInfo.FilePath)
+						next.Value = tsFilePath
+						tsRing = next
 					}
 					p.Close()
 				} else if err != nil {

@@ -53,3 +53,8 @@ relaymode 可以配置不同的转发模式
 hls:
   relaymode: 1
 ```
+## HLS.js测试页面
+
+访问 `http://localhost:8080/hls/index.html`
+
+域名和端口根据实际情况修改

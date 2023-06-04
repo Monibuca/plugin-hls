@@ -16,7 +16,7 @@ import (
 	"m7s.live/engine/v4/util"
 )
 
-var memoryTs sync.Map
+var memoryTs util.Map[string, *util.Map[string, util.Recyclable]]
 var memoryM3u8 sync.Map
 
 type TrackReader struct {
@@ -64,33 +64,25 @@ type HLSWriter struct {
 	pool         util.BytesPool
 	audio_tracks []*AudioTrackReader
 	video_tracks []*VideoTrackReader
-	defaultVideo *VideoTrackReader
 	Subscriber
+	memoryTs util.Map[string, util.Recyclable]
 }
 
 func (hls *HLSWriter) Start(r *Stream) {
 	hls.pool = make(util.BytesPool, 17)
+	memoryTs.Add(r.Path, &hls.memoryTs)
 	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
 	hls.ReadTrack()
+	memoryTs.Delete(r.Path)
 	memoryM3u8.Delete(r.Path)
 	for _, t := range hls.video_tracks {
 		memoryM3u8.Delete(t.m3u8Name)
-		t.infoRing.Do(func(i interface{}) {
-			if i != nil {
-				memoryTs.Delete(i.(PlaylistInf).FilePath)
-			}
-		})
 	}
 	for _, t := range hls.audio_tracks {
 		memoryM3u8.Delete(t.m3u8Name)
-		t.infoRing.Do(func(i interface{}) {
-			if i != nil {
-				memoryTs.Delete(i.(PlaylistInf).FilePath)
-			}
-		})
 	}
 }
 func (hls *HLSWriter) ReadTrack() {
@@ -99,12 +91,21 @@ func (hls *HLSWriter) ReadTrack() {
 	for _, t := range hls.video_tracks {
 		if defaultVideo == nil {
 			defaultVideo = t
-			hls.defaultVideo = t
+			break
 		}
 	}
 	for _, t := range hls.audio_tracks {
 		if defaultAudio == nil {
 			defaultAudio = t
+			if defaultVideo != nil {
+				for t.IDRing == nil && !hls.IsClosed() {
+					time.Sleep(time.Millisecond * 10)
+				}
+				t.Ring = t.IDRing
+			} else {
+				t.Ring = t.Track.Ring
+			}
+			break
 		}
 	}
 	var audioGroup string
@@ -130,7 +131,7 @@ func (hls *HLSWriter) ReadTrack() {
 					break
 				}
 				if frame.IFrame {
-					t.TrackReader.frag(hls.Stream.Path, frame.Timestamp)
+					t.TrackReader.frag(hls, frame.Timestamp)
 				}
 				t.pes.IsKeyFrame = frame.IFrame
 				t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
@@ -143,7 +144,7 @@ func (hls *HLSWriter) ReadTrack() {
 				if frame == nil {
 					break
 				}
-				t.TrackReader.frag(hls.Stream.Path, frame.Timestamp)
+				t.TrackReader.frag(hls, frame.Timestamp)
 				t.pes.IsKeyFrame = false
 				t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
 				t.MoveNext()
@@ -153,13 +154,15 @@ func (hls *HLSWriter) ReadTrack() {
 	}
 }
 
-func (t *TrackReader) frag(streamPath string, ts time.Duration) (err error) {
+func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
+	streamPath := hls.Stream.Path
 	// 当前的时间戳减去上一个ts切片的时间戳
 	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
 		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
 		tsFilename := t.Track.Name + strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
 		tsFilePath := streamPath + "/" + tsFilename
-		memoryTs.Store(tsFilePath, t.ts)
+
+		hls.memoryTs.Store(tsFilePath, t.ts)
 		// println(hls.currentTs.Length)
 		t.ts = &MemoryTs{
 			BytesPool: t.ts.BytesPool,
@@ -184,8 +187,8 @@ func (t *TrackReader) frag(streamPath string, ts time.Duration) (err error) {
 			if err = t.playlist.Init(); err != nil {
 				return
 			}
-			if mts, loaded := memoryTs.LoadAndDelete(t.infoRing.Value.(PlaylistInf).FilePath); loaded {
-				mts.(*MemoryTs).Recycle()
+			if mts, loaded := hls.memoryTs.Delete(t.infoRing.Value.(PlaylistInf).FilePath); loaded {
+				mts.Recycle()
 			}
 			t.infoRing.Value = inf
 			t.infoRing = t.infoRing.Next()
@@ -234,14 +237,6 @@ func (hls *HLSWriter) OnEvent(event any) {
 		}
 		track.init(hls, &v.Media, mpegts.PID_AUDIO)
 		track.ts.WritePMTPacket(v.CodecID, 0)
-		if hls.defaultVideo != nil {
-			for track.IDRing == nil && !hls.IsClosed() {
-				time.Sleep(time.Millisecond * 10)
-			}
-			track.Ring = track.IDRing
-		} else {
-			track.Ring = track.Track.Ring
-		}
 		hls.audio_tracks = append(hls.audio_tracks, track)
 	default:
 		hls.Subscriber.OnEvent(event)

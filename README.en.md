@@ -57,3 +57,8 @@ For example, if you want to only do pure forwarding for HLS and reduce CPU consu
 hls:
   relaymode: 1
 ```
+## HLS.js test page
+
+Access `http://localhost:8080/hls/index.html`
+
+Modify the domain name and port according to the actual situation
