@@ -1,7 +1,6 @@
 package hls
 
 import (
-
 	"net"
 	"net/http"
 	"path"
@@ -18,8 +17,6 @@ import (
 	"m7s.live/engine/v4/track"
 	"m7s.live/engine/v4/util"
 )
-
-
 
 var llhlsConfig = &LLHLSConfig{
 	DefaultYaml: defaultYaml,
@@ -166,7 +163,10 @@ func (ll *LLMuxer) Start(s *Stream) {
 	now := time.Now()
 	for ll.IO.Err() == nil {
 		for defaultAudio != nil {
-			frame := defaultAudio.TryRead()
+			frame, err := defaultAudio.TryRead()
+			if err != nil {
+				return
+			}
 			if frame == nil {
 				break
 			}
@@ -174,10 +174,12 @@ func (ll *LLMuxer) Start(s *Stream) {
 				AVFrame: frame,
 			}
 			ll.Muxer.WriteAudio(now.Add(frame.Timestamp-time.Second), frame.Timestamp, util.ConcatBuffers(audioFrame.GetADTS()))
-			defaultAudio.MoveNext()
 		}
 		for defaultVideo != nil {
-			frame := defaultVideo.TryRead()
+			frame, err  := defaultVideo.TryRead()
+			if err != nil {
+				return
+			}
 			if frame == nil {
 				break
 			}
@@ -190,7 +192,6 @@ func (ll *LLMuxer) Start(s *Stream) {
 				return true
 			})
 			ll.Muxer.WriteH26x(now.Add(frame.Timestamp-time.Second), frame.Timestamp, aus)
-			defaultVideo.MoveNext()
 		}
 		time.Sleep(time.Millisecond * 10)
 	}
