@@ -245,18 +245,12 @@ func (p *HLSPuller) OnEvent(event any) {
 	switch event.(type) {
 	case IPublisher:
 		p.TSPublisher.OnEvent(event)
-		// 不转协议
-		if hlsConfig.RelayMode == 1 {
-			close(p.PESChan)
-		}
 		if hlsConfig.RelayMode != 0 {
 			p.Stream.NeverTimeout = true
 			memoryTs.Add(p.StreamPath, &p.memoryTs)
 		}
 	case SEKick, SEclose:
-		if hlsConfig.RelayMode != 1 {
-			close(p.PESChan)
-		} else {
+		if hlsConfig.RelayMode == 1 {
 			memoryTs.Delete(p.StreamPath)
 		}
 		p.Publisher.OnEvent(event)
@@ -284,9 +278,14 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 	tsbuffer := make(chan io.ReadCloser)
 	bytesPool := make(util.BytesPool, 30)
 	tsRing := util.NewRing[string](6)
+	var tsReader *TSReader
+	if hlsConfig.RelayMode != 1 {
+		tsReader = NewTSReader(&p.TSPublisher)
+		defer tsReader.Close()
+	}
 	defer func() {
 		HLSPlugin.Info("hls exit", zap.String("streamPath", p.Stream.Path), zap.Error(err))
-		defer close(tsbuffer)
+		close(tsbuffer)
 		p.Stop()
 	}()
 	var maxResolution *m3u8.PlaylistItem
@@ -394,7 +393,7 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 					}
 					// 包含转协议
 					if hlsConfig.RelayMode != 1 {
-						p.Feed(p)
+						tsReader.Feed(p)
 					} else {
 						io.Copy(&tsBytes, p.Reader)
 					}
