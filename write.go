@@ -18,6 +18,13 @@ import (
 
 var memoryTs util.Map[string, *util.Map[string, util.Recyclable]]
 var memoryM3u8 sync.Map
+var pools sync.Pool
+
+func init() {
+	pools.New = func() any {
+		return make(util.BytesPool, 20)
+	}
+}
 
 type TrackReader struct {
 	sync.RWMutex
@@ -69,7 +76,7 @@ type HLSWriter struct {
 }
 
 func (hls *HLSWriter) Start(r *Stream) {
-	hls.pool = make(util.BytesPool, 17)
+	hls.pool = pools.Get().(util.BytesPool)
 	memoryTs.Add(r.Path, &hls.memoryTs)
 	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
@@ -77,6 +84,10 @@ func (hls *HLSWriter) Start(r *Stream) {
 	}
 	hls.ReadTrack()
 	memoryTs.Delete(r.Path)
+	hls.memoryTs.Range(func(k string, v util.Recyclable) {
+		v.Recycle()
+	})
+	pools.Put(hls.pool)
 	memoryM3u8.Delete(r.Path)
 	for _, t := range hls.video_tracks {
 		memoryM3u8.Delete(t.m3u8Name)
@@ -219,8 +230,7 @@ func (hls *HLSWriter) OnEvent(event any) {
 	var err error
 	defer func() {
 		if err != nil {
-			hls.Warn("write stop", zap.Error(err))
-			hls.Stop()
+			hls.Stop(zap.Error(err))
 		}
 	}()
 	switch v := event.(type) {

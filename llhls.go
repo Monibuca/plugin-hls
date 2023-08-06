@@ -78,8 +78,7 @@ func (ll *LLMuxer) OnEvent(event any) {
 	var err error
 	defer func() {
 		if err != nil {
-			ll.Warn("write stop", zap.Error(err))
-			ll.Stop()
+			ll.Stop(zap.Error(err))
 		}
 	}()
 	switch v := event.(type) {
@@ -173,10 +172,10 @@ func (ll *LLMuxer) Start(s *Stream) {
 			audioFrame := AudioFrame{
 				AVFrame: frame,
 			}
-			ll.Muxer.WriteAudio(now.Add(frame.Timestamp-time.Second), frame.Timestamp, util.ConcatBuffers(audioFrame.GetADTS()))
+			ll.Muxer.WriteMPEG4Audio(now.Add(frame.Timestamp-time.Second), frame.Timestamp, audioFrame.GetADTS())
 		}
 		for defaultVideo != nil {
-			frame, err  := defaultVideo.TryRead()
+			frame, err := defaultVideo.TryRead()
 			if err != nil {
 				return
 			}
