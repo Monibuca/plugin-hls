@@ -22,6 +22,7 @@ import (
 保存指定的流（例如live/hls）为HLS文件（m3u8和ts）当这个请求关闭时就结束保存（该API仅作用于远程拉流）
 - `/hls/api/pull?streamPath=live/hls&target=http://localhost/abc.m3u8`
 将目标HLS流拉过来作为媒体源在monibuca内以`live/hls`流的形式存在
+- llhls地址形式`http://localhost:8080/llhls/live/user1/index.m3u8` 进行播放，其中8080端口是全局HTTP配置，live/user1是streamPath，需要根据实际情况修改
 ## 配置
 - 配置信息按照需要添加到配置文件中，无需复制全部默认配置信息
 - publish 和 subscribe 配置会覆盖全局配置

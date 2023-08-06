@@ -23,7 +23,7 @@ List all HLS streams, is an SSE, can continue to receive the list data, plus?jso
 Save the specified stream (such as live/hls) as an HLS file (m3u8 and ts) when this request is closed, the save ends (this API only works for remote pulling)
 - `/hls/api/pull?streamPath=live/hls&target=http://localhost/abc.m3u8`
 Pull the target HLS stream over as a media source in monibuca in the form of `live/hls` stream
-
+- llhls address form `http://localhost:8080/llhls/live/user1/index.m3u8` for playback, where port 8080 is the global HTTP configuration, live/user1 is streamPath, which needs to be modified according to the actual situation
 ## Configuration
 - The configuration information is added to the configuration file as needed, and there is no need to copy all the default configuration information
 - The publish and subscribe configurations will override the global configuration
