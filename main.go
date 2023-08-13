@@ -101,17 +101,17 @@ func (c *HLSConfig) OnEvent(event any) {
 				go outStream.Start(v.Target)
 			}
 		}
-	case *Stream: //按需拉流
-		if url, ok := c.PullOnSub[v.Path]; ok {
-			if err := HLSPlugin.Pull(v.Path, url, new(HLSPuller), 0); err != nil {
-				HLSPlugin.Error("pull", zap.String("streamPath", v.Path), zap.String("url", url), zap.Error(err))
+	case InvitePublish: //按需拉流
+		if url, ok := c.PullOnSub[v.Target]; ok {
+			if err := HLSPlugin.Pull(v.Target, url, new(HLSPuller), 0); err != nil {
+				HLSPlugin.Error("pull", zap.String("streamPath", v.Target), zap.String("url", url), zap.Error(err))
 			}
 		}
 	}
 }
 
 func (config *HLSConfig) API_List(w http.ResponseWriter, r *http.Request) {
-	util.ReturnJson(FilterStreams[*HLSPuller], time.Second, w, r)
+	util.ReturnFetchValue(FilterStreams[*HLSPuller], w, r)
 }
 
 // 处于拉流时，可以调用这个API将拉流的TS文件保存下来，这个http如果断开，则停止保存
@@ -130,38 +130,53 @@ func (config *HLSConfig) API_Pull(w http.ResponseWriter, r *http.Request) {
 	streamPath := r.URL.Query().Get("streamPath")
 	save, _ := strconv.Atoi(r.URL.Query().Get("save"))
 	if err := HLSPlugin.Pull(streamPath, targetURL, new(HLSPuller), save); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		util.ReturnError(util.APIErrorQueryParse, err.Error(), w, r)
 	} else {
-		w.Write([]byte("ok"))
+		util.ReturnOK(w, r)
 	}
 }
 
 func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fileName := strings.TrimPrefix(r.URL.Path, "/")
+	waitTimeout, err := time.ParseDuration(r.URL.Query().Get("timeout"))
+	if err == nil {
+		HLSPlugin.Info("wait timeout", zap.String("fileName", fileName), zap.Duration("timeout", waitTimeout))
+	}
+	waitStart := time.Now()
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
 		w.Header().Add("Content-Type", "application/vnd.apple.mpegurl")
-		if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
-			switch hls := v.(type) {
-			case *TrackReader:
-				hls.RLock()
-				w.Write(hls.M3u8)
-				hls.RUnlock()
-				return
-			case string:
-				w.Write([]byte(hls))
-				return
-				// 				if _, ok := memoryM3u8.Load(hls); ok {
-				// 					ss := strings.Split(hls, "/")
-				// 					m3u8 := fmt.Sprintf(`#EXTM3U
-				// #EXT-X-VERSION:3
-				// #EXT-X-STREAM-INF:BANDWIDTH=2560000
-				// %s/%s.m3u8
-				// 					`, ss[len(ss)-2], ss[len(ss)-1])
-				// 					w.Write([]byte(m3u8))
-				// 					return
-				// 				}
+		for {
+			if v, ok := memoryM3u8.Load(strings.TrimSuffix(fileName, ".m3u8")); ok {
+				switch hls := v.(type) {
+				case *TrackReader:
+					hls.RLock()
+					w.Write(hls.M3u8)
+					hls.RUnlock()
+					return
+				case string:
+					fmt.Fprint(w, strings.Replace(hls, "?timeout=0", util.Conditoinal(err == nil, "?"+r.URL.RawQuery, ""), -1))
+					return
+					// 				if _, ok := memoryM3u8.Load(hls); ok {
+					// 					ss := strings.Split(hls, "/")
+					// 					m3u8 := fmt.Sprintf(`#EXTM3U
+					// #EXT-X-VERSION:3
+					// #EXT-X-STREAM-INF:BANDWIDTH=2560000
+					// %s/%s.m3u8
+					// 					`, ss[len(ss)-2], ss[len(ss)-1])
+					// 					w.Write([]byte(m3u8))
+					// 					return
+					// 				}
+				}
+			}
+			if err == nil && time.Since(waitStart) < waitTimeout {
+				TryInvitePublish(strings.TrimSuffix(fileName, ".m3u8"))
+				time.Sleep(time.Second)
+				continue
+			} else {
+				break
 			}
 		}
+
 		w.Write([]byte(fmt.Sprintf(`#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-MEDIA-SEQUENCE:%d
@@ -173,23 +188,38 @@ default.ts`, defaultSeq, int(math.Ceil(config.DefaultTSDuration.Seconds())), def
 	} else if strings.HasSuffix(r.URL.Path, ".ts") {
 		w.Header().Add("Content-Type", "video/mp2t") //video/mp2t
 		streamPath := path.Dir(fileName)
-		tsData := memoryTs.Get(streamPath)
-		if tsData == nil {
-			tsData = memoryTs.Get(path.Dir(streamPath))
+		for {
+			tsData := memoryTs.Get(streamPath)
 			if tsData == nil {
-				w.Write(defaultTS)
-				return
+				tsData = memoryTs.Get(path.Dir(streamPath))
+				if tsData == nil {
+					if err == nil && time.Since(waitStart) < waitTimeout {
+						time.Sleep(time.Second)
+						continue
+					} else {
+						w.Write(defaultTS)
+						return
+					}
+				}
 			}
-		}
-		if tsData := tsData.Get(fileName); tsData != nil {
-			switch v := tsData.(type) {
-			case *MemoryTs:
-				v.WriteTo(w)
-			case *util.ListItem[util.Buffer]:
-				w.Write(v.Value)
+			for {
+				if tsData := tsData.Get(fileName); tsData != nil {
+					switch v := tsData.(type) {
+					case *MemoryTs:
+						v.WriteTo(w)
+					case *util.ListItem[util.Buffer]:
+						w.Write(v.Value)
+					}
+				} else {
+					if err == nil && time.Since(waitStart) < waitTimeout {
+						time.Sleep(time.Second)
+						continue
+					} else {
+						w.Write(defaultTS)
+						return
+					}
+				}
 			}
-		} else {
-			w.Write(defaultTS)
 		}
 	} else {
 		f, err := hls_js.ReadFile("hls.js/" + fileName)
@@ -441,6 +471,10 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 func (p *HLSPuller) Connect() (err error) {
 	p.Video.Req, err = http.NewRequest("GET", p.RemoteURL, nil)
 	return
+}
+
+func (p *HLSPuller) Disconnect() {
+	p.Stop(zap.String("reason", "disconnect"))
 }
 
 func (p *HLSPuller) Pull() error {

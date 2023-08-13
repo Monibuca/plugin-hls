@@ -130,7 +130,7 @@ func (hls *HLSWriter) ReadTrack() {
 	if defaultVideo != nil {
 		m3u8 += fmt.Sprintf(`
 #EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d%s
-%s/%s.m3u8`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, audioGroup, hls.Stream.StreamName, defaultVideo.Track.Name)
+%s/%s.m3u8?timeout=0`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, audioGroup, hls.Stream.StreamName, defaultVideo.Track.Name)
 	}
 	// 存一个默认的m3u8
 	memoryM3u8.Store(hls.Stream.Path, m3u8)
