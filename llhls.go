@@ -100,8 +100,8 @@ func (ll *LLMuxer) OnEvent(event any) {
 }
 
 func (ll *LLMuxer) Start(s *Stream) {
-	if err := HLSPlugin.Subscribe(s.Path, ll); err != nil {
-		HLSPlugin.Error("LL-HLS Subscribe", zap.Error(err))
+	if err := LLHLSPlugin.Subscribe(s.Path, ll); err != nil {
+		LLHLSPlugin.Error("LL-HLS Subscribe", zap.Error(err))
 		return
 	}
 	ll.Muxer = &gohlslib.Muxer{

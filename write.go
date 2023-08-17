@@ -16,7 +16,9 @@ import (
 	"m7s.live/engine/v4/util"
 )
 
-var memoryTs util.Map[string, *util.Map[string, util.Recyclable]]
+var memoryTs util.Map[string, interface {
+	GetTs(key string) util.Recyclable
+}]
 var memoryM3u8 sync.Map
 var pools sync.Pool
 
@@ -72,28 +74,37 @@ type HLSWriter struct {
 	audio_tracks []*AudioTrackReader
 	video_tracks []*VideoTrackReader
 	Subscriber
-	memoryTs util.Map[string, util.Recyclable]
+	memoryTs     util.Map[string, util.Recyclable]
+	lastReadTime time.Time
 }
 
-func (hls *HLSWriter) Start(r *Stream) {
+func (hls *HLSWriter) GetTs(key string) util.Recyclable {
+	hls.lastReadTime = time.Now()
+	return hls.memoryTs.Get(key)
+}
+
+func (hls *HLSWriter) Start(streamPath string) {
 	hls.pool = pools.Get().(util.BytesPool)
-	memoryTs.Add(r.Path, &hls.memoryTs)
-	if err := HLSPlugin.Subscribe(r.Path, hls); err != nil {
+	memoryTs.Add(streamPath, hls)
+	if err := HLSPlugin.Subscribe(streamPath, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
 	hls.ReadTrack()
-	memoryTs.Delete(r.Path)
+	memoryTs.Delete(streamPath)
 	hls.memoryTs.Range(func(k string, v util.Recyclable) {
 		v.Recycle()
 	})
 	pools.Put(hls.pool)
-	memoryM3u8.Delete(r.Path)
+	memoryM3u8.Delete(streamPath)
 	for _, t := range hls.video_tracks {
 		memoryM3u8.Delete(t.m3u8Name)
 	}
 	for _, t := range hls.audio_tracks {
 		memoryM3u8.Delete(t.m3u8Name)
+	}
+	if !hlsConfig.Preload {
+		writingMap.Delete(streamPath)
 	}
 }
 func (hls *HLSWriter) ReadTrack() {
@@ -125,12 +136,12 @@ func (hls *HLSWriter) ReadTrack() {
 	if defaultAudio != nil {
 		audioGroup = `,AUDIO="audio"`
 		m3u8 += fmt.Sprintf(`
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8"`, defaultAudio.Track.Name, hls.Stream.StreamName, defaultAudio.Track.Name)
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="%s",DEFAULT=YES,AUTOSELECT=YES,URI="%s/%s.m3u8?sub=1"`, defaultAudio.Track.Name, hls.Stream.StreamName, defaultAudio.Track.Name)
 	}
 	if defaultVideo != nil {
 		m3u8 += fmt.Sprintf(`
 #EXT-X-STREAM-INF:BANDWIDTH=2962000,NAME="%s",RESOLUTION=%dx%d%s
-%s/%s.m3u8?timeout=0`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, audioGroup, hls.Stream.StreamName, defaultVideo.Track.Name)
+%s/%s.m3u8?sub=1`, defaultVideo.Track.Name, defaultVideo.Width, defaultVideo.Height, audioGroup, hls.Stream.StreamName, defaultVideo.Track.Name)
 	}
 	// 存一个默认的m3u8
 	memoryM3u8.Store(hls.Stream.Path, m3u8)
@@ -166,6 +177,9 @@ func (hls *HLSWriter) ReadTrack() {
 			}
 		}
 		time.Sleep(time.Millisecond * 10)
+		if !hlsConfig.Preload && !hls.lastReadTime.IsZero() && time.Since(hls.lastReadTime) > time.Second*15 {
+			hls.Stop(zap.String("reason", "no reader after 15s"))
+		}
 	}
 }
 
@@ -227,12 +241,6 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 }
 
 func (hls *HLSWriter) OnEvent(event any) {
-	var err error
-	defer func() {
-		if err != nil {
-			hls.Stop(zap.Error(err))
-		}
-	}()
 	switch v := event.(type) {
 	case *track.Video:
 		track := &VideoTrackReader{
