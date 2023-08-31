@@ -226,7 +226,7 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 							if item == nil {
 								p.Warn("memoryTs delete nil", zap.String("streamPath", p.Stream.Path), zap.String("tsFilePath", next.Value))
 							} else {
-								item.(*util.ListItem[util.Buffer]).Recycle()
+								item.Recycle()
 							}
 						}
 						next.Value = tsFilePath

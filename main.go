@@ -184,7 +184,7 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						writer, loaded := writingMap.LoadOrStore(streamPath, new(HLSWriter))
 						if !loaded {
 							outStream := writer.(*HLSWriter)
-							go outStream.Start(streamPath)
+							go outStream.Start(streamPath + "?" + r.URL.RawQuery)
 						}
 					} else {
 						TryInvitePublish(streamPath)

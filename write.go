@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,11 +86,12 @@ func (hls *HLSWriter) GetTs(key string) util.Recyclable {
 
 func (hls *HLSWriter) Start(streamPath string) {
 	hls.pool = pools.Get().(util.BytesPool)
-	memoryTs.Add(streamPath, hls)
 	if err := HLSPlugin.Subscribe(streamPath, hls); err != nil {
 		HLSPlugin.Error("HLS Subscribe", zap.Error(err))
 		return
 	}
+	streamPath = strings.Split(streamPath, "?")[0]
+	memoryTs.Add(streamPath, hls)
 	hls.ReadTrack()
 	memoryTs.Delete(streamPath)
 	hls.memoryTs.Range(func(k string, v util.Recyclable) {
