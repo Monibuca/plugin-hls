@@ -227,11 +227,9 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 				if err = t.playlist.Init(); err != nil {
 					return
 				}
-				//playlist起点是ring.next，长度是len(ring)-1
-				fmt.Println("现在的playlist是：")
+				//playlist起点是ring.next，长度是len(ring)-1				
 				for p := t.infoRing.Next(); p != t.infoRing; p = p.Next() {
 					t.playlist.WriteInf(p.Value.(PlaylistInf))
-					fmt.Println("##_", p.Value.(PlaylistInf).Title)
 				}
 			} else {
 				if err = t.playlist.WriteInf(t.infoRing.Prev().Value.(PlaylistInf)); err != nil {
@@ -243,7 +241,6 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 		}
 
 		if t.hls_segment_count >= t.hls_segment_window {
-			fmt.Println("[zjx] delete ts=", t.infoRing.Value.(PlaylistInf).FilePath)
 			if mts, loaded := hls.memoryTs.Delete(t.infoRing.Value.(PlaylistInf).FilePath); loaded {
 				mts.Recycle()
 			}
