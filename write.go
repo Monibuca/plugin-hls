@@ -164,7 +164,9 @@ func (hls *HLSWriter) ReadTrack() {
 					t.TrackReader.frag(hls, frame.Timestamp)
 				}
 				t.pes.IsKeyFrame = frame.IFrame
-				t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
+				if err = t.ts.WriteVideoFrame(VideoFrame{frame, t.Video, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes); err != nil {
+					return
+				}
 			}
 		}
 		for _, t := range hls.audio_tracks {
@@ -178,7 +180,9 @@ func (hls *HLSWriter) ReadTrack() {
 				}
 				t.TrackReader.frag(hls, frame.Timestamp)
 				t.pes.IsKeyFrame = false
-				t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes)
+				if err = t.ts.WriteAudioFrame(AudioFrame{frame, t.Audio, t.AbsTime, uint32(frame.PTS), uint32(frame.DTS)}, t.pes); err != nil {
+					return
+				}
 			}
 		}
 		time.Sleep(time.Millisecond * 10)
