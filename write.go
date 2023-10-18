@@ -40,6 +40,8 @@ type TrackReader struct {
 	hls_segment_count uint32 // hls segment count
 	playlist          Playlist
 	infoRing          *ring.Ring
+	hls_playlist_count uint32
+	hls_segment_window uint32
 }
 
 func (tr *TrackReader) init(hls *HLSWriter, media *track.Media, pid uint16) {
@@ -49,7 +51,8 @@ func (tr *TrackReader) init(hls *HLSWriter, media *track.Media, pid uint16) {
 	tr.pes = &mpegts.MpegtsPESFrame{
 		Pid: pid,
 	}
-	tr.infoRing = ring.New(hlsConfig.Window)
+	tr.hls_segment_window = uint32(hlsConfig.Window) + 1
+	tr.infoRing = ring.New(int(tr.hls_segment_window))
 	tr.m3u8Name = hls.Stream.Path + "/" + media.Name
 	tr.AVRingReader = hls.CreateTrackReader(media)
 	tr.playlist = Playlist{
@@ -190,15 +193,19 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 	// 当前的时间戳减去上一个ts切片的时间戳
 	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
 		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
-		tsFilename := t.Track.Name + strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
+		if dur == ts && t.write_time == 0 {//时间戳不对的情况，首个默认为2s
+			dur = time.Duration(2) * time.Second
+		}
+		num := uint32(t.hls_segment_count)
+		tsFilename := t.Track.Name + strconv.FormatInt(time.Now().Unix(), 10) + "_" + strconv.FormatUint(uint64(num), 10) + ".ts"
 		tsFilePath := streamPath + "/" + tsFilename
 
-		hls.memoryTs.Store(tsFilePath, t.ts)
 		// println(hls.currentTs.Length)
 		t.ts = &MemoryTs{
 			BytesPool: t.ts.BytesPool,
 			PMT:       t.ts.PMT,
 		}
+		hls.memoryTs.Store(tsFilePath, t.ts)
 		if t.playlist.Targetduration < int(dur.Seconds()) {
 			t.playlist.Targetduration = int(math.Ceil(dur.Seconds()))
 		}
@@ -213,31 +220,39 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 		}
 		t.Lock()
 		defer t.Unlock()
-		if t.hls_segment_count >= uint32(hlsConfig.Window) {
-			t.M3u8.Reset()
-			if err = t.playlist.Init(); err != nil {
-				return
+
+		if t.hls_segment_count > 0 {
+			if t.hls_playlist_count >= uint32(hlsConfig.Window) {
+				t.M3u8.Reset()
+				if err = t.playlist.Init(); err != nil {
+					return
+				}
+				//playlist起点是ring.next，长度是len(ring)-1				
+				for p := t.infoRing.Next(); p != t.infoRing; p = p.Next() {
+					t.playlist.WriteInf(p.Value.(PlaylistInf))
+				}
+			} else {
+				if err = t.playlist.WriteInf(t.infoRing.Prev().Value.(PlaylistInf)); err != nil {
+					return
+				}
 			}
+			memoryM3u8.LoadOrStore(t.m3u8Name, t)
+			t.hls_playlist_count++
+		}
+
+		if t.hls_segment_count >= t.hls_segment_window {
 			if mts, loaded := hls.memoryTs.Delete(t.infoRing.Value.(PlaylistInf).FilePath); loaded {
 				mts.Recycle()
 			}
 			t.infoRing.Value = inf
 			t.infoRing = t.infoRing.Next()
-			t.infoRing.Do(func(i interface{}) {
-				t.playlist.WriteInf(i.(PlaylistInf))
-			})
 		} else {
 			t.infoRing.Value = inf
 			t.infoRing = t.infoRing.Next()
-			if err = t.playlist.WriteInf(inf); err != nil {
-				return
-			}
 		}
 		t.hls_segment_count++
-		t.write_time = ts
-		if t.playlist.tsCount > 0 {
-			memoryM3u8.LoadOrStore(t.m3u8Name, t)
-		}
+		t.write_time = ts		
+
 	}
 	return
 }
