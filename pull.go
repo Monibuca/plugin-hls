@@ -193,22 +193,27 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 							p.Closer = f
 						}
 					}
-					var tsBytes util.LimitBuffer
+					var tsBytes *util.Buffer
 					var item *util.ListItem[util.Buffer]
 					// 包含转发
 					if hlsConfig.RelayMode != 0 {
-						item = bytesPool.Get(int(tsRes.ContentLength))
-						tsBytes.Buffer = item.Value[:0]
+						if tsRes.ContentLength < 0 {
+							item = bytesPool.GetShell(make([]byte, 0))
+						} else {
+							item = bytesPool.Get(int(tsRes.ContentLength))
+							item.Value = item.Value[:0]
+						}
+						tsBytes = &item.Value
 					}
 					// 双转
 					if hlsConfig.RelayMode == 2 {
-						p.SetIO(io.TeeReader(p.Reader, &tsBytes))
+						p.SetIO(io.TeeReader(p.Reader, tsBytes))
 					}
 					// 包含转协议
 					if hlsConfig.RelayMode != 1 {
 						tsReader.Feed(p)
 					} else {
-						io.Copy(&tsBytes, p.Reader)
+						io.Copy(tsBytes, p.Reader)
 					}
 					if hlsConfig.RelayMode != 0 {
 						tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"

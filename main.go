@@ -108,9 +108,9 @@ func (c *HLSConfig) OnEvent(event any) {
 			}
 		}
 	case InvitePublish: //按需拉流
-		if url, ok := c.PullOnSub[v.Target]; ok {
-			if err := HLSPlugin.Pull(v.Target, url, new(HLSPuller), 0); err != nil {
-				HLSPlugin.Error("pull", zap.String("streamPath", v.Target), zap.String("url", url), zap.Error(err))
+		if remoteURL := c.CheckPullOnSub(v.Target); remoteURL != "" {
+			if err := HLSPlugin.Pull(v.Target, remoteURL, new(HLSPuller), 0); err != nil {
+				HLSPlugin.Error("pull", zap.String("streamPath", v.Target), zap.String("url", remoteURL), zap.Error(err))
 			}
 		}
 	}
