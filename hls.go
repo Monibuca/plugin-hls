@@ -54,20 +54,17 @@ func (pl *Playlist) Init() (err error) {
 	// 	"#EXT-X-DISCONTINUITY:%d\n"+
 	// 	"#EXT-X-KEY:METHOD=%s,URI=%s,IV=%s\n"+
 	// 	"#EXT-X-ENDLIST", hls.Version, hls.Sequence, hls.Targetduration, hls.PlaylistType, hls.Discontinuity, hls.Key.Method, hls.Key.Uri, hls.Key.IV)
-	ss := fmt.Sprintf("#EXTM3U\n"+
+	_, err = fmt.Fprintf(pl, "#EXTM3U\n"+
 		"#EXT-X-VERSION:%d\n"+
 		"#EXT-X-MEDIA-SEQUENCE:%d\n"+
 		"#EXT-X-TARGETDURATION:%d\n", pl.Version, pl.Sequence, pl.Targetduration)
-
-	_, err = pl.Write([]byte(ss))
 	pl.Sequence++
 	return
 }
 
 func (pl *Playlist) WriteInf(inf PlaylistInf) (err error) {
-	ss := fmt.Sprintf("#EXTINF:%.3f,\n"+
+	_, err = fmt.Fprintf(pl, "#EXTINF:%.3f,\n"+
 		"%s\n", inf.Duration, inf.Title)
-	_, err = pl.Write([]byte(ss))
 	pl.tsCount++
 	return
 }

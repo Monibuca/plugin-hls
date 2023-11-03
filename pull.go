@@ -3,13 +3,14 @@ package hls
 import (
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quangngotan95/go-m3u8/m3u8"
@@ -35,6 +36,28 @@ type M3u8Info struct {
 	M3U8Count int           //一共拉取的m3u8文件数量
 	TSCount   int           //一共拉取的ts文件数量
 	LastM3u8  string        //最后一个m3u8文件内容
+}
+
+type TSDownloader struct {
+	client *http.Client
+	url    *url.URL
+	req    *http.Request
+	res    *http.Response
+	wg     sync.WaitGroup
+	err    error
+	dur    float64
+}
+
+func (p *TSDownloader) Start() {
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		if tsRes, err := p.client.Do(p.req); err == nil {
+			p.res = tsRes
+		} else {
+			p.err = err
+		}
+	}()
 }
 
 func (p *HLSPuller) GetTs(key string) util.Recyclable {
@@ -103,12 +126,12 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 	}()
 	var maxResolution *m3u8.PlaylistItem
 	for errcount := 0; err == nil; err = p.Err() {
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
+		resp, err1 := client.Do(req)
+		if err1 != nil {
+			return err1
 		}
 		req = resp.Request
-		if playlist, err := readM3U8(resp); err == nil {
+		if playlist, err2 := readM3U8(resp); err2 == nil {
 			errcount = 0
 			info.LastM3u8 = playlist.String()
 			//if !playlist.Live {
@@ -160,10 +183,11 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 					}
 				}
 			}
-			HLSPlugin.Debug("readM3U8", zap.Int("sequence", sequence), zap.Int("tscount", len(tsItems)))
+			tsCount := len(tsItems)
+			HLSPlugin.Debug("readM3U8", zap.Int("sequence", sequence), zap.Int("tscount", tsCount))
 			lastTs = thisTs
-			if len(tsItems) > 3 {
-				tsItems = tsItems[len(tsItems)-3:]
+			if tsCount > 3 {
+				tsItems = tsItems[tsCount-3:]
 			}
 			var plBuffer util.Buffer
 			relayPlayList := Playlist{
@@ -174,7 +198,8 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 			if hlsConfig.RelayMode != 0 {
 				relayPlayList.Init()
 			}
-			for _, v := range tsItems {
+			var tsDownloaders = make([]*TSDownloader, len(tsItems))
+			for i, v := range tsItems {
 				if p.Err() != nil {
 					return p.Err()
 				}
@@ -182,14 +207,25 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 				tsReq, _ := http.NewRequestWithContext(p.Context, "GET", tsUrl.String(), nil)
 				tsReq.Header = p.TsHead
 				// t1 := time.Now()
-				HLSPlugin.Debug("start download ts", zap.String("tsUrl", tsUrl.String()))
-				if tsRes, err := client.Do(tsReq); err == nil {
+				tsDownloaders[i] = &TSDownloader{
+					client: client,
+					req:    tsReq,
+					url:    tsUrl,
+					dur:    v.Duration,
+				}
+				tsDownloaders[i].Start()
+			}
+			ts := time.Now().UnixMilli()
+			for i, v := range tsDownloaders {
+				HLSPlugin.Debug("start download ts", zap.String("tsUrl", v.url.String()))
+				v.wg.Wait()
+				if v.res != nil {
 					info.TSCount++
-					p.SetIO(tsRes.Body)
+					p.SetIO(v.res.Body)
 					if p.SaveContext != nil && p.SaveContext.Err() == nil {
 						os.MkdirAll(filepath.Join(hlsConfig.Path, p.Stream.Path), 0766)
-						if f, err := os.OpenFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(tsUrl.Path)), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666); err == nil {
-							p.SetIO(io.TeeReader(tsRes.Body, f))
+						if f, err := os.OpenFile(filepath.Join(hlsConfig.Path, p.Stream.Path, filepath.Base(v.url.Path)), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666); err == nil {
+							p.SetIO(io.TeeReader(v.res.Body, f))
 							p.Closer = f
 						}
 					}
@@ -197,30 +233,29 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 					var item *util.ListItem[util.Buffer]
 					// 包含转发
 					if hlsConfig.RelayMode != 0 {
-						if tsRes.ContentLength < 0 {
+						if v.res.ContentLength < 0 {
 							item = bytesPool.GetShell(make([]byte, 0))
 						} else {
-							item = bytesPool.Get(int(tsRes.ContentLength))
+							item = bytesPool.Get(int(v.res.ContentLength))
 							item.Value = item.Value[:0]
 						}
 						tsBytes = &item.Value
 					}
-					// 双转
-					if hlsConfig.RelayMode == 2 {
-						p.SetIO(io.TeeReader(p.Reader, tsBytes))
-					}
-					// 包含转协议
-					if hlsConfig.RelayMode != 1 {
-						tsReader.Feed(p)
-					} else {
+					switch hlsConfig.RelayMode {
+					case 1:
 						io.Copy(tsBytes, p.Reader)
+					case 2:
+						p.SetIO(io.TeeReader(p.Reader, tsBytes))
+						fallthrough
+					case 0:
+						tsReader.Feed(p)
 					}
 					if hlsConfig.RelayMode != 0 {
-						tsFilename := strconv.FormatInt(time.Now().Unix(), 10) + ".ts"
+						tsFilename := fmt.Sprintf("%d_%d.ts", ts, i)
 						tsFilePath := p.StreamPath + "/" + tsFilename
 						var plInfo = PlaylistInf{
 							Title:    p.Stream.StreamName + "/" + tsFilename,
-							Duration: v.Duration,
+							Duration: v.dur,
 							FilePath: tsFilePath,
 						}
 						relayPlayList.WriteInf(plInfo)
@@ -229,7 +264,7 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 						if next.Value != "" {
 							item, _ := p.memoryTs.Delete(next.Value)
 							if item == nil {
-								p.Warn("memoryTs delete nil", zap.String("streamPath", p.Stream.Path), zap.String("tsFilePath", next.Value))
+								p.Warn("memoryTs delete nil", zap.String("tsFilePath", next.Value))
 							} else {
 								item.Recycle()
 							}
@@ -238,22 +273,27 @@ func (p *HLSPuller) pull(info *M3u8Info) (err error) {
 						tsRing = next
 					}
 					p.Close()
-				} else if err != nil {
-					HLSPlugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+				} else if v.err != nil {
+					HLSPlugin.Error("reqTs", zap.String("streamPath", p.Stream.Path), zap.Error(v.err))
+				} else {
+					HLSPlugin.Error("reqTs", zap.String("streamPath", p.Stream.Path))
 				}
+				HLSPlugin.Debug("finish download ts", zap.String("tsUrl", v.url.String()))
 			}
 			if hlsConfig.RelayMode != 0 {
-				memoryM3u8.Store(p.Stream.Path, string(plBuffer))
+				m3u8 := string(plBuffer)
+				HLSPlugin.Debug("write m3u8", zap.String("streamPath", p.Stream.Path), zap.String("m3u8", m3u8))
+				memoryM3u8.Store(p.Stream.Path, m3u8)
 			}
 		} else {
-			HLSPlugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err))
+			HLSPlugin.Error("readM3u8", zap.String("streamPath", p.Stream.Path), zap.Error(err2))
 			errcount++
 			if errcount > 10 {
-				return err
+				return err2
 			}
 		}
 	}
-	return err
+	return
 }
 
 func (p *HLSPuller) Connect() (err error) {
