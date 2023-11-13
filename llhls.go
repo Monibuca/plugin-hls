@@ -184,13 +184,21 @@ func (ll *LLMuxer) Start(s *Stream) {
 			}
 			var aus net.Buffers
 			if frame.IFrame {
+				if len(defaultVideo.ParamaterSets[0]) == 0 {
+					continue
+				}
 				aus = append(aus, defaultVideo.ParamaterSets...)
 			}
 			frame.AUList.Range(func(au *util.BLL) bool {
-				aus = append(aus, util.ConcatBuffers(au.ToBuffers()))
+				auBytes := util.ConcatBuffers(au.ToBuffers())
+				if len(auBytes) > 0 {
+					aus = append(aus, auBytes)
+				}
 				return true
 			})
-			ll.Muxer.WriteH26x(now.Add(frame.Timestamp-time.Second), frame.Timestamp, aus)
+			if len(aus) > 0 {
+				ll.Muxer.WriteH26x(now.Add(frame.Timestamp-time.Second), frame.Timestamp, aus)
+			}
 		}
 		time.Sleep(time.Millisecond * 10)
 	}
