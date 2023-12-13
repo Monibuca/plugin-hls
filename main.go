@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,26 +30,22 @@ var defaultYaml DefaultYaml
 var defaultSeq = 0                        // 默认片头的全局序号
 var writing = make(map[string]*HLSWriter) // preload 使用
 var writingMap sync.Map                   // 非preload使用
-var hlsConfig = &HLSConfig{
-	DefaultYaml: defaultYaml,
-}
-var HLSPlugin = InstallPlugin(hlsConfig)
+var hlsConfig = &HLSConfig{}
+var HLSPlugin = InstallPlugin(hlsConfig, defaultYaml)
 
 type HLSConfig struct {
-	DefaultYaml
 	config.HTTP
 	config.Publish
 	config.Pull
 	config.Subscribe
-	Fragment          time.Duration `default:"2s"`
-	Window            int           `default:"3"`
-	Filter            string        // 过滤，正则表达式
-	Path              string
-	DefaultTS         string        // 默认的ts文件
-	DefaultTSDuration time.Duration // 默认的ts文件时长(秒)
-	RelayMode         int           // 转发模式,0:转协议+不转发,1:不转协议+转发，2:转协议+转发
-	Preload           bool          // 是否预加载，提高响应速度
-	filterReg         *regexp.Regexp
+	Fragment          time.Duration `default:"2s" desc:"ts分片大小"`
+	Window            int           `default:"3" desc:"m3u8窗口大小(包含ts的数量)"`
+	Filter            config.Regexp `desc:"用于过滤的正则表达式"` // 过滤，正则表达式
+	Path              string        `desc:"保存 ts 文件的路径"`
+	DefaultTS         string        `desc:"默认的ts文件"`                                     // 默认的ts文件
+	DefaultTSDuration time.Duration `desc:"默认的ts文件时长"`                                   // 默认的ts文件时长
+	RelayMode         int           `desc:"转发模式（转协议会消耗资源）" enum:"0:只转协议,1:纯转发,2:转协议+转发"` // 转发模式,0:转协议+不转发,1:不转协议+转发，2:转协议+转发
+	Preload           bool          `desc:"是否预加载，提高响应速度"`                                // 是否预加载，提高响应速度
 }
 
 func (c *HLSConfig) OnEvent(event any) {
@@ -58,9 +53,6 @@ func (c *HLSConfig) OnEvent(event any) {
 	case FirstConfig:
 		if !c.Preload {
 			c.Internal = false // 如何不预加载，则为非内部订阅
-		}
-		if c.Filter != "" {
-			c.filterReg = regexp.MustCompile(c.Filter)
 		}
 		for streamPath, url := range c.PullOnStart {
 			if err := HLSPlugin.Pull(streamPath, url, new(HLSPuller), 0); err != nil {
@@ -87,10 +79,6 @@ func (c *HLSConfig) OnEvent(event any) {
 				}
 			}()
 		}
-	case config.Config:
-		if c.Filter != "" {
-			c.filterReg = regexp.MustCompile(c.Filter)
-		}
 	case SEclose:
 		if c.Preload {
 			delete(writing, v.Target.Path)
@@ -99,7 +87,7 @@ func (c *HLSConfig) OnEvent(event any) {
 		}
 	case SEpublish:
 		if c.Preload {
-			if writing[v.Target.Path] == nil && (c.filterReg == nil || c.filterReg.MatchString(v.Target.Path)) {
+			if writing[v.Target.Path] == nil && (!c.Filter.Valid() || c.Filter.MatchString(v.Target.Path)) {
 				if _, ok := v.Target.Publisher.(*HLSPuller); !ok || c.RelayMode == 0 {
 					var outStream HLSWriter
 					writing[v.Target.Path] = &outStream
