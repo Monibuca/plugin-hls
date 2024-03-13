@@ -135,7 +135,7 @@ func (config *HLSConfig) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	waitTimeout, err := time.ParseDuration(query.Get("timeout"))
 	if err == nil {
-		HLSPlugin.Info("wait timeout", zap.String("fileName", fileName), zap.Duration("timeout", waitTimeout))
+		HLSPlugin.Debug("request", zap.String("fileName", fileName), zap.Duration("timeout", waitTimeout))
 	} else if !config.Preload {
 		waitTimeout = time.Second * 10
 	}

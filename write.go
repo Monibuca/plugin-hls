@@ -35,11 +35,11 @@ type TrackReader struct {
 	pes  *mpegts.MpegtsPESFrame
 	ts   *MemoryTs
 	*track.AVRingReader
-	write_time        time.Duration
-	m3u8Name          string
-	hls_segment_count uint32 // hls segment count
-	playlist          Playlist
-	infoRing          *ring.Ring
+	write_time         time.Duration
+	m3u8Name           string
+	hls_segment_count  uint32 // hls segment count
+	playlist           Playlist
+	infoRing           *ring.Ring
 	hls_playlist_count uint32
 	hls_segment_window uint32
 }
@@ -115,24 +115,18 @@ func (hls *HLSWriter) Start(streamPath string) {
 func (hls *HLSWriter) ReadTrack() {
 	var defaultAudio *AudioTrackReader
 	var defaultVideo *VideoTrackReader
-	for _, t := range hls.video_tracks {
-		if defaultVideo == nil {
-			defaultVideo = t
-			break
-		}
+	if len(hls.video_tracks) > 0 {
+		defaultVideo = hls.video_tracks[0]
 	}
-	for _, t := range hls.audio_tracks {
-		if defaultAudio == nil {
-			defaultAudio = t
-			if defaultVideo != nil {
-				for t.IDRing == nil && !hls.IsClosed() {
-					time.Sleep(time.Millisecond * 10)
-				}
-				t.Ring = t.IDRing
-			} else {
-				t.Ring = t.Track.Ring
+	if len(hls.audio_tracks) > 0 {
+		defaultAudio = hls.audio_tracks[0]
+		if defaultVideo != nil {
+			for defaultAudio.IDRing == nil && !hls.IsClosed() {
+				time.Sleep(time.Millisecond * 10)
 			}
-			break
+			defaultAudio.Ring = defaultAudio.IDRing
+		} else {
+			defaultAudio.Ring = defaultAudio.Track.Ring
 		}
 	}
 	var audioGroup string
@@ -197,7 +191,7 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 	// 当前的时间戳减去上一个ts切片的时间戳
 	if dur := ts - t.write_time; dur >= hlsConfig.Fragment {
 		// fmt.Println("time :", video.Timestamp, tsSegmentTimestamp)
-		if dur == ts && t.write_time == 0 {//时间戳不对的情况，首个默认为2s
+		if dur == ts && t.write_time == 0 { //时间戳不对的情况，首个默认为2s
 			dur = time.Duration(2) * time.Second
 		}
 		num := uint32(t.hls_segment_count)
@@ -209,6 +203,7 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 			BytesPool: t.ts.BytesPool,
 			PMT:       t.ts.PMT,
 		}
+		HLSPlugin.Debug("write ts", zap.String("tsFilePath", tsFilePath))
 		hls.memoryTs.Store(tsFilePath, t.ts)
 		if t.playlist.Targetduration < int(dur.Seconds()) {
 			t.playlist.Targetduration = int(math.Ceil(dur.Seconds()))
@@ -231,7 +226,7 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 				if err = t.playlist.Init(); err != nil {
 					return
 				}
-				//playlist起点是ring.next，长度是len(ring)-1				
+				//playlist起点是ring.next，长度是len(ring)-1
 				for p := t.infoRing.Next(); p != t.infoRing; p = p.Next() {
 					t.playlist.WriteInf(p.Value.(PlaylistInf))
 				}
@@ -255,7 +250,7 @@ func (t *TrackReader) frag(hls *HLSWriter, ts time.Duration) (err error) {
 			t.infoRing = t.infoRing.Next()
 		}
 		t.hls_segment_count++
-		t.write_time = ts		
+		t.write_time = ts
 
 	}
 	return
