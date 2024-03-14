@@ -15,16 +15,9 @@ require (
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 )
 
-require (
-	github.com/abema/go-mp4 v1.1.1 // indirect
-	github.com/aler9/writerseeker v1.1.0 // indirect
-	github.com/asticode/go-astikit v0.30.0 // indirect
-	github.com/asticode/go-astits v1.13.0 // indirect
-	github.com/bluenviron/mediacommon v1.5.1
-)
+require github.com/bluenviron/mediacommon v1.5.1 // indirect
 
 require (
-	github.com/bluenviron/gohlslib v1.0.0
 	github.com/cnotch/ipchub v1.1.0 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
